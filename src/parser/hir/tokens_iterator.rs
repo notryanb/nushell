@@ -12,14 +12,14 @@ pub struct TokensIterator<'a> {
 }
 
 #[derive(Debug)]
-pub struct Peeked<'a, 'b> {
-    pub(crate) node: &'a TokenNode,
-    iterator: &'b mut TokensIterator<'a>,
+pub struct Peeked<'content, 'me> {
+    pub(crate) node: &'content TokenNode,
+    iterator: &'me mut TokensIterator<'content>,
     commit_point: usize,
 }
 
-impl<'a, 'b> Peeked<'a, 'b> {
-    pub(crate) fn commit(self) -> (&'a mut TokensIterator<'b>, &'a TokenNode) {
+impl<'me, 'content> Peeked<'content, 'me> {
+    pub(crate) fn commit(self) -> (&'me mut TokensIterator<'content>, &'content TokenNode) {
         let mut iterator = self.iterator;
         let node = self.node;
         iterator.commit(self.commit_point);

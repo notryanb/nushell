@@ -74,7 +74,7 @@ fn triage_external_head(node: &TokenNode) -> Result<Tag, ShellError> {
     })
 }
 
-fn triage_continuation(nodes: &mut TokensIterator) -> Result<Option<Tag>, ShellError> {
+fn triage_continuation<'a, 'b>(nodes: &'a mut TokensIterator<'b>) -> Result<Option<Tag>, ShellError> {
     let peeked = nodes.peek_any();
 
     let peeked = match peeked {

@@ -274,9 +274,9 @@ impl ExpandSyntax for CommandHeadShape {
 pub struct InternalCommandHeadShape;
 
 impl ExpandSyntax for InternalCommandHeadShape {
-    fn expand<'a, 'b>(
+    fn expand(
         &self,
-        token_nodes: &'b mut TokensIterator<'a>,
+        token_nodes: &mut TokensIterator<'_>,
         context: &Context,
         source: &Text,
         origin: uuid::Uuid,
