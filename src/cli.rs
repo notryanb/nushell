@@ -6,12 +6,21 @@ use crate::commands::classified::{
 use crate::commands::plugin::JsonRpc;
 use crate::commands::plugin::{PluginCommand, PluginSink};
 use crate::commands::whole_stream_command;
+use crate::commands::Command;
 use crate::context::Context;
 use crate::data::Value;
 pub(crate) use crate::errors::ShellError;
 use crate::git::current_branch;
 use crate::parser::registry::Signature;
-use crate::parser::{hir, CallNode, Pipeline, PipelineElement, TokenNode};
+use crate::parser::{
+    hir,
+    hir::syntax_shape::CommandHeadShape,
+    hir::{
+        baseline_parse_next_expr, expand_external_tokens::expand_external_tokens,
+        tokens_iterator::TokensIterator, RawExpression,
+    },
+    parse_command, Pipeline, PipelineElement, TokenNode,
+};
 use crate::prelude::*;
 
 use log::{debug, trace};
@@ -22,6 +31,7 @@ use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
 use std::iter::Iterator;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum MaybeOwned<'a, T> {
@@ -530,53 +540,79 @@ fn classify_pipeline(
 }
 
 fn classify_command(
-    command: &PipelineElement,
+    command: &Tagged<PipelineElement>,
     context: &Context,
     source: &Text,
 ) -> Result<ClassifiedCommand, ShellError> {
-    let call = command.call();
+    let mut iterator = TokensIterator::new(&command.tokens.item, true);
 
-    match call {
+    let head = baseline_parse_next_expr(
+        &mut iterator,
+        context,
+        source,
+        command.tag.origin.unwrap_or_else(|| uuid::Uuid::nil()),
+        CommandHeadShape,
+    )?;
+
+    match head.item {
         // If the command starts with `^`, treat it as an external command no matter what
-        call if call.head().is_external() => {
-            let name_tag = call.head().expect_external();
-            let name = name_tag.slice(source);
+        RawExpression::ExternalCommand(hir::ExternalCommand { name }) => {
+            let name_str = name.slice(source);
 
-            Ok(external_command(call, source, name.tagged(name_tag)))
+            external_command(&mut iterator, source, name_str.tagged(name))
         }
 
-        // Otherwise, if the command is a bare word, we'll need to triage it
-        call if call.head().is_bare() => {
-            let head = call.head();
+        RawExpression::Literal(hir::Literal::Bare) | RawExpression::Command => {
             let name = head.source(source);
+            let tagged_name = head.tag.tagged_slice(source);
 
-            match context.has_command(name) {
-                // if the command is in the registry, it's an internal command
-                true => {
-                    let command = context.get_command(name);
-                    let config = command.signature();
-
-                    trace!(target: "nu::build_pipeline", "classifying {:?}", config);
-
-                    let args: hir::Call = config.parse_args(call, &context, source)?;
-
-                    trace!(target: "nu::build_pipeline", "args :: {}", args.debug(source));
-
-                    Ok(ClassifiedCommand::Internal(InternalCommand {
-                        command,
-                        name_tag: head.tag(),
-                        args,
-                    }))
-                }
-
-                // otherwise, it's an external command
-                false => Ok(external_command(call, source, name.tagged(head.tag()))),
+            if context.has_command(&name) {
+                internal_command(
+                    context,
+                    head,
+                    context.get_command(&name),
+                    (&mut iterator).tagged(command.tag),
+                    source,
+                    tagged_name,
+                )
+            } else {
+                external_command(&mut iterator, source, tagged_name)
             }
         }
 
+        // Otherwise, if the command is a bare word, we'll need to triage it
+        // call if call.head().is_bare() => {
+        //     let head = call.head();
+        //     let name = head.source(source);
+
+        //     match context.has_command(name) {
+        //         // if the command is in the registry, it's an internal command
+        //         true => {
+        //             let command = context.get_command(name);
+        //             let config = command.signature();
+
+        //             trace!(target: "nu::build_pipeline", "classifying {:?}", config);
+
+        //             let args: hir::Call = config.parse_args(call, &context, source)?;
+
+        //             trace!(target: "nu::build_pipeline", "args :: {}", args.debug(source));
+
+        //             Ok(ClassifiedCommand::Internal(InternalCommand {
+        //                 command,
+        //                 name_tag: head.tag(),
+        //                 args,
+        //             }))
+        //         }
+
+        //         // otherwise, it's an external command
+        //         false => Ok(external_command(call, source, name.tagged(head.tag()))),
+        //     }
+        // }
+        other => unimplemented!("{:?}", other),
+
         // If the command is something else (like a number or a variable), that is currently unsupported.
         // We might support `$somevar` as a curried command in the future.
-        call => Err(ShellError::invalid_command(call.head().tag())),
+        _ => Err(ShellError::invalid_command(command.tag())),
     }
 }
 
@@ -584,26 +620,32 @@ fn classify_command(
 // to nu syntactic constructs, and passes all arguments to the external command as
 // strings.
 fn external_command(
-    call: &Tagged<CallNode>,
+    tokens: &mut TokensIterator,
     source: &Text,
     name: Tagged<&str>,
-) -> ClassifiedCommand {
-    let arg_list_strings: Vec<Tagged<String>> = match call.children() {
-        Some(args) => args
-            .iter()
-            .filter_map(|i| match i {
-                TokenNode::Whitespace(_) => None,
-                other => Some(other.as_external_arg(source).tagged(other.tag())),
-            })
-            .collect(),
-        None => vec![],
-    };
+) -> Result<ClassifiedCommand, ShellError> {
+    let arg_list_strings = expand_external_tokens(tokens, source)?;
 
-    let (name, tag) = name.into_parts();
-
-    ClassifiedCommand::External(ExternalCommand {
+    Ok(ClassifiedCommand::External(ExternalCommand {
         name: name.to_string(),
-        name_tag: tag,
+        name_tag: name.tag(),
         args: arg_list_strings,
-    })
+    }))
+}
+
+fn internal_command(
+    context: &Context,
+    head: hir::Expression,
+    command: Arc<Command>,
+    tokens: Tagged<&mut TokensIterator>,
+    source: &Text,
+    name: Tagged<&str>,
+) -> Result<ClassifiedCommand, ShellError> {
+    let (call, command) = parse_command(context, head, command, tokens, source)?;
+
+    Ok(ClassifiedCommand::Internal(InternalCommand::new(
+        command,
+        name.tag(),
+        call,
+    )))
 }

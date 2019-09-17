@@ -1,5 +1,6 @@
 use crate::errors::ShellError;
 use crate::parser::parse::{call_node::*, flag::*, operator::*, pipeline::*, tokens::*};
+use crate::prelude::*;
 use crate::traits::ToDebug;
 use crate::{Tag, Tagged, Text};
 use derive_new::new;
@@ -12,6 +13,7 @@ pub enum TokenNode {
     Token(Token),
 
     Call(Tagged<CallNode>),
+    Nodes(Tagged<Vec<TokenNode>>),
     Delimited(Tagged<DelimitedNode>),
     Pipeline(Tagged<Pipeline>),
     Operator(Tagged<Operator>),
@@ -20,7 +22,6 @@ pub enum TokenNode {
     Whitespace(Tag),
 
     Error(Tagged<Box<ShellError>>),
-    Path(Tagged<PathNode>),
 }
 
 impl ToDebug for TokenNode {
@@ -94,6 +95,7 @@ impl TokenNode {
     pub fn tag(&self) -> Tag {
         match self {
             TokenNode::Token(t) => t.tag(),
+            TokenNode::Nodes(t) => t.tag(),
             TokenNode::Call(s) => s.tag(),
             TokenNode::Delimited(s) => s.tag(),
             TokenNode::Pipeline(s) => s.tag(),
@@ -102,13 +104,13 @@ impl TokenNode {
             TokenNode::Member(s) => *s,
             TokenNode::Whitespace(s) => *s,
             TokenNode::Error(s) => s.tag(),
-            TokenNode::Path(s) => s.tag(),
         }
     }
 
-    pub fn type_name(&self) -> String {
+    pub fn type_name(&self) -> &'static str {
         match self {
             TokenNode::Token(t) => t.type_name(),
+            TokenNode::Nodes(_) => "nodes",
             TokenNode::Call(_) => "command",
             TokenNode::Delimited(d) => d.type_name(),
             TokenNode::Pipeline(_) => "pipeline",
@@ -117,9 +119,11 @@ impl TokenNode {
             TokenNode::Member(_) => "member",
             TokenNode::Whitespace(_) => "whitespace",
             TokenNode::Error(_) => "error",
-            TokenNode::Path(_) => "path",
         }
-        .to_string()
+    }
+
+    pub fn tagged_type_name(&self) -> Tagged<&'static str> {
+        self.type_name().tagged(self.tag())
     }
 
     pub fn old_debug<'a>(&'a self, source: &'a Text) -> DebugTokenNode<'a> {
@@ -181,6 +185,13 @@ impl TokenNode {
             _ => Err(ShellError::string("unimplemented")),
         }
     }
+
+    pub fn is_whitespace(&self) -> bool {
+        match self {
+            TokenNode::Whitespace(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Getters, new)]
@@ -205,6 +216,24 @@ pub enum Delimiter {
     Paren,
     Brace,
     Square,
+}
+
+impl Delimiter {
+    pub(crate) fn open(&self) -> char {
+        match self {
+            Delimiter::Paren => '(',
+            Delimiter::Brace => '{',
+            Delimiter::Square => '[',
+        }
+    }
+
+    pub(crate) fn close(&self) -> char {
+        match self {
+            Delimiter::Paren => ')',
+            Delimiter::Brace => '}',
+            Delimiter::Square => ']',
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Getters, new)]

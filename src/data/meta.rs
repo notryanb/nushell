@@ -1,4 +1,5 @@
 use crate::context::{SourceMap, SpanSource};
+use crate::parser::parse::parser::TracableContext;
 use crate::prelude::*;
 use crate::Text;
 use derive_new::new;
@@ -161,7 +162,7 @@ impl From<&std::ops::Range<usize>> for Span {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, Hash, Getters,
+    Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, Hash, Getters, new,
 )]
 pub struct Tag {
     pub origin: Option<Uuid>,
@@ -179,6 +180,15 @@ impl From<&Span> for Tag {
         Tag {
             origin: None,
             span: *span,
+        }
+    }
+}
+
+impl From<(usize, usize, TracableContext)> for Tag {
+    fn from((start, end, context): (usize, usize, TracableContext)) -> Self {
+        Tag {
+            origin: Some(context.origin),
+            span: Span { start, end },
         }
     }
 }
@@ -201,10 +211,10 @@ impl From<(usize, usize, Option<Uuid>)> for Tag {
     }
 }
 
-impl From<nom_locate::LocatedSpanEx<&str, Uuid>> for Tag {
-    fn from(input: nom_locate::LocatedSpanEx<&str, Uuid>) -> Tag {
+impl From<nom_locate::LocatedSpanEx<&str, TracableContext>> for Tag {
+    fn from(input: nom_locate::LocatedSpanEx<&str, TracableContext>) -> Tag {
         Tag {
-            origin: Some(input.extra),
+            origin: Some(input.extra.origin),
             span: Span {
                 start: input.offset,
                 end: input.offset + input.fragment.len(),
@@ -262,6 +272,14 @@ impl Tag {
 
     pub fn slice<'a>(&self, source: &'a str) -> &'a str {
         self.span.slice(source)
+    }
+
+    pub fn tagged_slice<'a>(&self, source: &'a str) -> Tagged<&'a str> {
+        self.span.slice(source).tagged(self)
+    }
+
+    pub fn tagged_string<'a>(&self, source: &'a str) -> Tagged<String> {
+        self.span.slice(source).to_string().tagged(self)
     }
 }
 

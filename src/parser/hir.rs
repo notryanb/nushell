@@ -1,9 +1,12 @@
 pub(crate) mod baseline_parse;
 pub(crate) mod baseline_parse_tokens;
 pub(crate) mod binary;
+pub(crate) mod expand_external_tokens;
 pub(crate) mod external_command;
 pub(crate) mod named;
 pub(crate) mod path;
+pub(crate) mod syntax_shape;
+pub(crate) mod tokens_iterator;
 
 use crate::parser::{registry, Unit};
 use crate::prelude::*;
@@ -16,16 +19,19 @@ use std::path::PathBuf;
 use crate::evaluate::Scope;
 
 pub(crate) use self::baseline_parse::{
-    baseline_parse_single_token, baseline_parse_token_as_number, baseline_parse_token_as_path,
-    baseline_parse_token_as_pattern, baseline_parse_token_as_string,
+    baseline_parse_single_token, baseline_parse_token_as_command_head,
+    baseline_parse_token_as_number, baseline_parse_token_as_path, baseline_parse_token_as_pattern,
+    baseline_parse_token_as_string,
 };
-pub(crate) use self::baseline_parse_tokens::{baseline_parse_next_expr, TokensIterator};
+pub(crate) use self::baseline_parse_tokens::baseline_parse_next_expr;
 pub(crate) use self::binary::Binary;
 pub(crate) use self::external_command::ExternalCommand;
 pub(crate) use self::named::NamedArguments;
 pub(crate) use self::path::Path;
+pub(crate) use self::syntax_shape::ExpandSyntax;
+pub(crate) use self::tokens_iterator::TokensIterator;
 
-pub use self::baseline_parse_tokens::SyntaxShape;
+pub use self::syntax_shape::SyntaxShape;
 
 pub fn path(head: impl Into<Expression>, tail: Vec<Tagged<impl Into<String>>>) -> Path {
     Path::new(
@@ -92,6 +98,7 @@ pub enum RawExpression {
     Path(Box<Path>),
 
     FilePath(PathBuf),
+    Command,
     ExternalCommand(ExternalCommand),
 
     Boolean(bool),
@@ -115,6 +122,7 @@ impl RawExpression {
         match self {
             RawExpression::Literal(literal) => literal.type_name(),
             RawExpression::Synthetic(synthetic) => synthetic.type_name(),
+            RawExpression::Command => "command",
             RawExpression::ExternalWord => "externalword",
             RawExpression::FilePath(..) => "filepath",
             RawExpression::Variable(..) => "variable",
@@ -182,6 +190,7 @@ impl ToDebug for Expression {
             RawExpression::Literal(l) => l.tagged(self.tag()).fmt_debug(f, source),
             RawExpression::FilePath(p) => write!(f, "{}", p.display()),
             RawExpression::ExternalWord => write!(f, "{}", self.tag().slice(source)),
+            RawExpression::Command => write!(f, "{}", self.tag().slice(source)),
             RawExpression::Synthetic(Synthetic::String(s)) => write!(f, "{:?}", s),
             RawExpression::Variable(Variable::It(_)) => write!(f, "$it"),
             RawExpression::Variable(Variable::Other(s)) => write!(f, "${}", s.slice(source)),

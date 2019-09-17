@@ -31,60 +31,68 @@ impl TokenTreeBuilder {
         (node, builder.output)
     }
 
-    pub fn pipeline(input: Vec<(Option<&str>, CurriedCall, Option<&str>)>) -> CurriedToken {
-        let input: Vec<(Option<String>, CurriedCall, Option<String>)> = input
-            .into_iter()
-            .map(|(pre, call, post)| {
-                (
-                    pre.map(|s| s.to_string()),
-                    call,
-                    post.map(|s| s.to_string()),
-                )
-            })
-            .collect();
+    fn build_tagged<T>(&mut self, callback: impl FnOnce(&mut TokenTreeBuilder) -> T) -> Tagged<T> {
+        let start = self.pos;
+        let ret = callback(self);
+        let end = self.pos;
 
+        ret.tagged((start, end, self.origin))
+    }
+
+    pub fn pipeline(input: Vec<Vec<CurriedToken>>) -> CurriedToken {
         Box::new(move |b| {
             let start = b.pos;
 
-            let mut out: Vec<PipelineElement> = vec![];
+            let mut out: Vec<Tagged<PipelineElement>> = vec![];
 
             let mut input = input.into_iter().peekable();
-            let (pre, call, post) = input
+            let head = input
                 .next()
                 .expect("A pipeline must contain at least one element");
 
             let pipe = None;
-            let pre_tag = pre.map(|pre| b.consume_tag(&pre));
-            let call = call(b);
-            let post_tag = post.map(|post| b.consume_tag(&post));
+            let head = b.build_tagged(|b| head.into_iter().map(|node| node(b)).collect());
 
-            out.push(PipelineElement::new(pipe, pre_tag, call, post_tag));
+            let head_tag: Tag = head.tag;
+            out.push(PipelineElement::new(pipe, head).tagged(head_tag));
 
             loop {
                 match input.next() {
                     None => break,
-                    Some((pre, call, post)) => {
+                    Some(node) => {
+                        let start = b.pos;
                         let pipe = Some(b.consume_tag("|"));
-                        let pre_span = pre.map(|pre| b.consume_tag(&pre));
-                        let call = call(b);
-                        let post_span = post.map(|post| b.consume_tag(&post));
+                        let node =
+                            b.build_tagged(|b| node.into_iter().map(|node| node(b)).collect());
+                        let end = b.pos;
 
-                        out.push(PipelineElement::new(pipe, pre_span, call, post_span));
+                        out.push(PipelineElement::new(pipe, node).tagged((start, end, b.origin)));
                     }
                 }
             }
 
             let end = b.pos;
 
-            TokenTreeBuilder::tagged_pipeline((out, None), (start, end, b.origin))
+            TokenTreeBuilder::tagged_pipeline(out, (start, end, b.origin))
         })
     }
 
-    pub fn tagged_pipeline(
-        input: (Vec<PipelineElement>, Option<Tag>),
-        tag: impl Into<Tag>,
-    ) -> TokenNode {
-        TokenNode::Pipeline(Pipeline::new(input.0, input.1.into()).tagged(tag.into()))
+    pub fn tagged_pipeline(input: Vec<Tagged<PipelineElement>>, tag: impl Into<Tag>) -> TokenNode {
+        TokenNode::Pipeline(Pipeline::new(input).tagged(tag.into()))
+    }
+
+    pub fn token_list(input: Vec<CurriedToken>) -> CurriedToken {
+        Box::new(move |b| {
+            let start = b.pos;
+            let tokens = input.into_iter().map(|i| i(b)).collect();
+            let end = b.pos;
+
+            TokenTreeBuilder::tagged_token_list(tokens, (start, end, b.origin))
+        })
+    }
+
+    pub fn tagged_token_list(input: Vec<TokenNode>, tag: impl Into<Tag>) -> TokenNode {
+        TokenNode::Nodes(input.tagged(tag))
     }
 
     pub fn op(input: impl Into<Operator>) -> CurriedToken {
@@ -227,29 +235,6 @@ impl TokenTreeBuilder {
         let (int, unit) = (input.0.into(), input.1.into());
 
         TokenNode::Token(RawToken::Size(int, unit).tagged(tag.into()))
-    }
-
-    pub fn path(head: CurriedToken, tail: Vec<CurriedToken>) -> CurriedToken {
-        Box::new(move |b| {
-            let start = b.pos;
-            let head = head(b);
-
-            let mut output = vec![];
-
-            for item in tail {
-                b.consume(".");
-
-                output.push(item(b));
-            }
-
-            let end = b.pos;
-
-            TokenTreeBuilder::tagged_path((head, output), (start, end, b.origin))
-        })
-    }
-
-    pub fn tagged_path(input: (TokenNode, Vec<TokenNode>), tag: impl Into<Tag>) -> TokenNode {
-        TokenNode::Path(PathNode::new(Box::new(input.0), input.1).tagged(tag.into()))
     }
 
     pub fn var(input: impl Into<String>) -> CurriedToken {

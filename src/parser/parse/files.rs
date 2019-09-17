@@ -18,7 +18,7 @@ impl language_reporting::ReportingFiles for Files {
         from_index: usize,
         to_index: usize,
     ) -> Option<Self::Span> {
-        Some(Tag::from((from_index, to_index, file)))
+        Some(Tag::new(Some(file), (from_index, to_index).into()))
     }
 
     fn file_id(&self, tag: Self::Span) -> Self::FileId {
@@ -64,7 +64,7 @@ impl language_reporting::ReportingFiles for Files {
 
         for (pos, _) in source.match_indices('\n') {
             if seen_lines == lineno {
-                return Some(Tag::from((seen_bytes, pos, file)));
+                return Some(Tag::new(Some(file), (seen_bytes, pos).into()));
             } else {
                 seen_lines += 1;
                 seen_bytes = pos + 1;
@@ -72,7 +72,7 @@ impl language_reporting::ReportingFiles for Files {
         }
 
         if seen_lines == 0 {
-            Some(Tag::from((0, self.snippet.len() - 1, file)))
+            Some(Tag::new(Some(file), (0, self.snippet.len() - 1).into()))
         } else {
             None
         }

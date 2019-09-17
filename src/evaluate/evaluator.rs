@@ -49,6 +49,7 @@ pub(crate) fn evaluate_baseline_expr(
             Ok(Value::string(s).tagged_unknown())
         }
         RawExpression::Variable(var) => evaluate_reference(var, scope, source),
+        RawExpression::Command => evaluate_command(expr.tag(), scope, source),
         RawExpression::ExternalCommand(external) => evaluate_external(external, scope, source),
         RawExpression::Binary(binary) => {
             let left = evaluate_baseline_expr(binary.left(), registry, scope, source)?;
@@ -139,4 +140,8 @@ fn evaluate_external(
     Err(ShellError::syntax_error(
         "Unexpected external command".tagged(*external.name()),
     ))
+}
+
+fn evaluate_command(tag: Tag, _scope: &Scope, _source: &Text) -> Result<Tagged<Value>, ShellError> {
+    Err(ShellError::syntax_error("Unexpected command".tagged(tag)))
 }

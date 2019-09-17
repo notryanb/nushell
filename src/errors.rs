@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+use crate::parser::parse::parser::TracableContext;
 use ansi_term::Color;
 use derive_new::new;
 use language_reporting::{Diagnostic, Label, Severity};
@@ -72,6 +73,14 @@ impl ShellError {
         ProximateShellError::TypeError {
             expected: expected.into(),
             actual: actual.map(|i| Some(i.into())),
+        }
+        .start()
+    }
+
+    pub(crate) fn unexpected_eof(expected: impl Into<String>, origin: uuid::Uuid) -> ShellError {
+        ProximateShellError::UnexpectedEof {
+            expected: expected.into(),
+            origin,
         }
         .start()
     }
@@ -151,7 +160,7 @@ impl ShellError {
 
     pub(crate) fn parse_error(
         error: nom::Err<(
-            nom_locate::LocatedSpanEx<&str, uuid::Uuid>,
+            nom_locate::LocatedSpanEx<&str, TracableContext>,
             nom::error::ErrorKind,
         )>,
     ) -> ShellError {
@@ -253,7 +262,6 @@ impl ShellError {
                 Label::new_primary(tag)
                     .with_message(format!("Expected {}, found {}", expected, actual)),
             ),
-
             ProximateShellError::TypeError {
                 expected,
                 actual:
@@ -263,6 +271,10 @@ impl ShellError {
                     },
             } => Diagnostic::new(Severity::Error, "Type Error")
                 .with_label(Label::new_primary(tag).with_message(expected)),
+
+            ProximateShellError::UnexpectedEof {
+                expected, origin
+            } => Diagnostic::new(Severity::Error, format!("Unexpected end of input, expected {}", expected)),
 
             ProximateShellError::RangeError {
                 kind,
@@ -405,6 +417,10 @@ pub enum ProximateShellError {
     SyntaxError {
         problem: Tagged<String>,
     },
+    UnexpectedEof {
+        expected: String,
+        origin: uuid::Uuid,
+    },
     InvalidCommand {
         command: Tag,
     },
@@ -491,6 +507,7 @@ impl std::fmt::Display for ShellError {
             ProximateShellError::MissingValue { .. } => write!(f, "MissingValue"),
             ProximateShellError::InvalidCommand { .. } => write!(f, "InvalidCommand"),
             ProximateShellError::TypeError { .. } => write!(f, "TypeError"),
+            ProximateShellError::UnexpectedEof { .. } => write!(f, "UnexpectedEof"),
             ProximateShellError::RangeError { .. } => write!(f, "RangeError"),
             ProximateShellError::SyntaxError { .. } => write!(f, "SyntaxError"),
             ProximateShellError::MissingProperty { .. } => write!(f, "MissingProperty"),

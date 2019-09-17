@@ -1,78 +1,44 @@
+use crate::commands::Command;
 use crate::context::Context;
 use crate::errors::{ArgumentError, ShellError};
 use crate::parser::registry::{NamedType, PositionalType, Signature};
-use crate::parser::{baseline_parse_tokens, CallNode};
+use crate::parser::{baseline_parse_tokens, TokensIterator};
 use crate::parser::{
-    hir::{self, NamedArguments},
+    hir::{self, Literal, NamedArguments, RawExpression},
     Flag, RawToken, TokenNode,
 };
 use crate::traits::ToDebug;
 use crate::{Tag, Tagged, TaggedItem, Text};
 use log::trace;
+use std::sync::Arc;
 
 pub fn parse_command(
-    config: &Signature,
     context: &Context,
-    call: &Tagged<CallNode>,
+    head: Tagged<RawExpression>,
+    command: Arc<Command>,
+    body: Tagged<&mut TokensIterator>,
     source: &Text,
-) -> Result<hir::Call, ShellError> {
-    let Tagged { item: raw_call, .. } = call;
+) -> Result<(hir::Call, Arc<Command>), ShellError> {
+    trace!("Processing {:?}", command.signature());
 
-    trace!("Processing {:?}", config);
+    let call =
+        match parse_command_tail(&command.signature(), context, body.item, source, body.tag())? {
+            None => hir::Call::new(Box::new(head), None, None),
+            Some((positional, named)) => hir::Call::new(Box::new(head), positional, named),
+        };
 
-    let head = parse_command_head(call.head())?;
-
-    let children: Option<Vec<TokenNode>> = raw_call.children().as_ref().map(|nodes| {
-        nodes
-            .iter()
-            .cloned()
-            .filter(|node| match node {
-                TokenNode::Whitespace(_) => false,
-                _ => true,
-            })
-            .collect()
-    });
-
-    match parse_command_tail(&config, context, children, source, call.tag())? {
-        None => Ok(hir::Call::new(Box::new(head), None, None)),
-        Some((positional, named)) => Ok(hir::Call::new(Box::new(head), positional, named)),
-    }
+    Ok((call, command))
 }
 
-fn parse_command_head(head: &TokenNode) -> Result<hir::Expression, ShellError> {
-    match head {
-        TokenNode::Token(
-            spanned @ Tagged {
-                item: RawToken::Bare,
-                ..
-            },
-        ) => Ok(spanned.map(|_| hir::RawExpression::Literal(hir::Literal::Bare))),
-
-        TokenNode::Token(Tagged {
-            item: RawToken::String(inner_tag),
-            tag,
-        }) => Ok(hir::RawExpression::Literal(hir::Literal::String(*inner_tag)).tagged(*tag)),
-
-        other => Err(ShellError::unexpected(&format!(
-            "command head -> {:?}",
-            other
-        ))),
-    }
-}
-
-fn parse_command_tail(
+pub fn parse_command_tail(
     config: &Signature,
     context: &Context,
-    tail: Option<Vec<TokenNode>>,
+    tail: &mut TokensIterator,
     source: &Text,
     command_tag: Tag,
 ) -> Result<Option<(Option<Vec<hir::Expression>>, Option<NamedArguments>)>, ShellError> {
-    let tail = &mut match &tail {
-        None => hir::TokensIterator::new(&[]),
-        Some(tail) => hir::TokensIterator::new(tail),
-    };
-
     let mut named = NamedArguments::new();
+    let origin = command_tag.origin.unwrap_or_else(|| uuid::Uuid::nil());
 
     trace_remaining("nodes", tail.clone(), source);
 
@@ -99,8 +65,13 @@ fn parse_command_tail(
                             ));
                         }
 
-                        let expr =
-                            hir::baseline_parse_next_expr(tail, context, source, *syntax_type)?;
+                        let expr = hir::baseline_parse_next_expr(
+                            tail,
+                            context,
+                            source,
+                            origin,
+                            *syntax_type,
+                        )?;
 
                         tail.restart();
                         named.insert_mandatory(name, expr);
@@ -120,7 +91,8 @@ fn parse_command_tail(
                         ));
                     }
 
-                    let expr = hir::baseline_parse_next_expr(tail, context, source, *syntax_type)?;
+                    let expr =
+                        hir::baseline_parse_next_expr(tail, context, source, origin, *syntax_type)?;
 
                     tail.restart();
                     named.insert_optional(name, Some(expr));
@@ -143,7 +115,7 @@ fn parse_command_tail(
 
         match arg {
             PositionalType::Mandatory(..) => {
-                if tail.len() == 0 {
+                if tail.at_end() {
                     return Err(ShellError::argument_error(
                         config.name.clone(),
                         ArgumentError::MissingMandatoryPositional(arg.name().to_string()),
@@ -153,13 +125,14 @@ fn parse_command_tail(
             }
 
             PositionalType::Optional(..) => {
-                if tail.len() == 0 {
+                if tail.at_end() {
                     break;
                 }
             }
         }
 
-        let result = hir::baseline_parse_next_expr(tail, context, source, arg.syntax_type())?;
+        let result =
+            hir::baseline_parse_next_expr(tail, context, source, origin, arg.syntax_type())?;
 
         positional.push(result);
     }
@@ -167,7 +140,7 @@ fn parse_command_tail(
     trace_remaining("after positional", tail.clone(), source);
 
     if let Some(syntax_type) = config.rest_positional {
-        let remainder = baseline_parse_tokens(tail, context, source, syntax_type)?;
+        let remainder = baseline_parse_tokens(tail, context, source, origin, syntax_type)?;
         positional.extend(remainder);
     }
 

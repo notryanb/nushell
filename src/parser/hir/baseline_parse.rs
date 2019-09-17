@@ -1,8 +1,10 @@
+#[cfg(test)]
+mod tests;
+
 use crate::context::Context;
 use crate::errors::ShellError;
 use crate::parser::{hir, RawToken, Token};
-use crate::TaggedItem;
-use crate::Text;
+use crate::{Tag, Tagged, TaggedItem, Text};
 use std::path::PathBuf;
 
 pub fn baseline_parse_single_token(
@@ -23,6 +25,22 @@ pub fn baseline_parse_single_token(
         RawToken::ExternalWord => return Err(ShellError::invalid_external_word(token.tag())),
         RawToken::GlobPattern => hir::Expression::pattern(token.tag()),
         RawToken::Bare => hir::Expression::bare(token.tag()),
+    })
+}
+
+pub fn baseline_parse_token_as_command_head(
+    token: &Token,
+    source: &Text,
+) -> Result<hir::Expression, ShellError> {
+    Ok(match token.item {
+        RawToken::ExternalCommand(tag) => hir::Expression::external_command(tag, token.tag()),
+        RawToken::Bare => hir::RawExpression::Command.tagged(token.tag()),
+        _ => {
+            return Err(ShellError::type_error(
+                "command head",
+                token.type_name().tagged(token.tag()),
+            ))
+        }
     })
 }
 
