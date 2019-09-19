@@ -418,10 +418,11 @@ async fn process_line(readline: Result<String, ReadlineError>, ctx: &mut Context
             debug!("=== Parsed ===");
             debug!("{:#?}", result);
 
-            let mut pipeline = match classify_pipeline(&result, ctx, &Text::from(line)) {
-                Ok(pipeline) => pipeline,
-                Err(err) => return LineResult::Error(line.clone(), err),
-            };
+            let mut pipeline =
+                match classify_pipeline(&result, ctx, uuid::Uuid::nil(), &Text::from(line)) {
+                    Ok(pipeline) => pipeline,
+                    Err(err) => return LineResult::Error(line.clone(), err),
+                };
 
             match pipeline.commands.last() {
                 Some(ClassifiedCommand::External(_)) => {}
@@ -523,6 +524,7 @@ async fn process_line(readline: Result<String, ReadlineError>, ctx: &mut Context
 fn classify_pipeline(
     pipeline: &TokenNode,
     context: &Context,
+    origin: uuid::Uuid,
     source: &Text,
 ) -> Result<ClassifiedPipeline, ShellError> {
     let pipeline = pipeline.as_pipeline()?;
@@ -531,7 +533,7 @@ fn classify_pipeline(
 
     let commands: Result<Vec<_>, ShellError> = parts
         .iter()
-        .map(|item| classify_command(&item, context, &source))
+        .map(|item| classify_command(&item, context, origin, &source))
         .collect();
 
     Ok(ClassifiedPipeline {
@@ -542,15 +544,16 @@ fn classify_pipeline(
 fn classify_command(
     command: &Tagged<PipelineElement>,
     context: &Context,
+    origin: uuid::Uuid,
     source: &Text,
 ) -> Result<ClassifiedCommand, ShellError> {
-    let mut iterator = TokensIterator::new(&command.tokens.item, true);
+    let mut iterator = TokensIterator::new(&command.tokens.item, command.tag.origin, true);
 
     let head = baseline_parse_next_expr(
         &mut iterator,
-        context,
+        &context.expand_context(origin),
         source,
-        command.tag.origin.unwrap_or_else(|| uuid::Uuid::nil()),
+        command.tag.origin,
         CommandHeadShape,
     )?;
 

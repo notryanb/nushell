@@ -108,7 +108,7 @@ impl TokenTreeBuilder {
     }
 
     pub fn tagged_op(input: impl Into<Operator>, tag: impl Into<Tag>) -> TokenNode {
-        TokenNode::Operator(input.into().tagged(tag.into()))
+        TokenNode::Token(RawToken::Operator(input.into()).tagged(tag.into()))
     }
 
     pub fn string(input: impl Into<String>) -> CurriedToken {

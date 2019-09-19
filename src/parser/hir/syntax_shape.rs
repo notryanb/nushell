@@ -1,7 +1,10 @@
-use crate::parser::{hir, hir::TokensIterator, RawToken, TokenNode};
+use crate::parser::hir::tokens_iterator::Peeked;
+use crate::parser::{hir, hir::TokensIterator, Operator, RawToken, TokenNode};
 use crate::prelude::*;
+use derive_new::new;
+use getset::Getters;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum SyntaxShape {
@@ -20,11 +23,11 @@ pub enum SyntaxShape {
     Boolean,
 }
 
-impl ExpandSyntax for SyntaxShape {
+impl ExpandExpression for SyntaxShape {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &'b mut TokensIterator<'a>,
-        context: &Context,
+        context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
@@ -68,24 +71,132 @@ impl std::fmt::Display for SyntaxShape {
     }
 }
 
-pub trait ExpandSyntax: std::fmt::Debug + Copy {
+#[derive(Getters, new)]
+pub struct ExpandContext<'context> {
+    #[get = "pub(crate)"]
+    registry: &'context CommandRegistry,
+    #[get = "pub(crate)"]
+    origin: uuid::Uuid,
+    homedir: Option<PathBuf>,
+}
+
+impl<'context> ExpandContext<'context> {
+    pub(crate) fn homedir(&self) -> Option<&Path> {
+        self.homedir.as_ref().map(|h| h.as_path())
+    }
+
+    #[cfg(test)]
+    pub fn with_empty(callback: impl FnOnce(ExpandContext)) {
+        let registry = CommandRegistry::new();
+
+        callback(ExpandContext {
+            registry: &registry,
+            homedir: None,
+        })
+    }
+}
+
+pub trait TestSyntax: std::fmt::Debug + Copy {
+    fn test<'a, 'b>(
+        &self,
+        token_nodes: &'b mut TokensIterator<'a>,
+        context: &ExpandContext,
+        source: &Text,
+        origin: uuid::Uuid,
+    ) -> Option<Peeked<'a, 'b>>;
+}
+
+pub trait ExpandExpression: std::fmt::Debug + Copy {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &'b mut TokensIterator<'a>,
-        context: &Context,
+        context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError>;
 }
 
+pub trait ExpandSyntax: std::fmt::Debug + Copy {
+    type Output;
+
+    fn expand<'a, 'b>(
+        &self,
+        token_nodes: &'b mut TokensIterator<'a>,
+        context: &ExpandContext,
+        source: &Text,
+        origin: uuid::Uuid,
+    ) -> Result<Self::Output, ShellError>;
+}
+
+pub trait SkipSyntax: std::fmt::Debug + Copy {
+    fn skip<'a, 'b>(
+        &self,
+        token_nodes: &'b mut TokensIterator<'a>,
+        context: &ExpandContext,
+        source: &Text,
+        origin: uuid::Uuid,
+    ) -> Result<(), ShellError>;
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct BareShape;
+
+impl TestSyntax for BareShape {
+    fn test<'a, 'b>(
+        &self,
+        token_nodes: &'b mut TokensIterator<'a>,
+        context: &ExpandContext,
+        source: &Text,
+        origin: uuid::Uuid,
+    ) -> Option<Peeked<'a, 'b>> {
+        match token_nodes.peek_any() {
+            Some(peeked) => match peeked.node {
+                TokenNode::Token(token) => match token.item {
+                    RawToken::Bare => Some(peeked),
+                    _ => None,
+                },
+                _ => None,
+            },
+
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct DotShape;
+
+impl SkipSyntax for DotShape {
+    fn skip<'a, 'b>(
+        &self,
+        token_nodes: &mut TokensIterator<'_>,
+        context: &ExpandContext,
+        source: &Text,
+        origin: uuid::Uuid,
+    ) -> Result<(), ShellError> {
+        parse_single_node(token_nodes, "dot", source, origin, |token, token_tag| {
+            Ok(match token {
+                _ => {
+                    return Err(ShellError::type_error(
+                        "variable",
+                        token.type_name().tagged(token_tag),
+                    ))
+                }
+            })
+        })?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct StringShape;
 
-impl ExpandSyntax for StringShape {
+impl ExpandExpression for StringShape {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        _context: &Context,
+        _context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
@@ -95,6 +206,12 @@ impl ExpandSyntax for StringShape {
                     return Err(ShellError::type_error(
                         "String",
                         "glob pattern".tagged(token_tag),
+                    ))
+                }
+                RawToken::Operator(..) => {
+                    return Err(ShellError::type_error(
+                        "String",
+                        "operator".tagged(token_tag),
                     ))
                 }
                 RawToken::Variable(tag) if tag.slice(source) == "it" => {
@@ -112,14 +229,36 @@ impl ExpandSyntax for StringShape {
     }
 }
 
+impl TestSyntax for StringShape {
+    fn test<'a, 'b>(
+        &self,
+        token_nodes: &'b mut TokensIterator<'a>,
+        context: &ExpandContext,
+        source: &Text,
+        origin: uuid::Uuid,
+    ) -> Option<Peeked<'a, 'b>> {
+        match token_nodes.peek_any() {
+            Some(peeked) => match peeked.node {
+                TokenNode::Token(token) => match token.item {
+                    RawToken::String(_) => Some(peeked),
+                    _ => None,
+                },
+                _ => None,
+            },
+
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct NumberShape;
 
-impl ExpandSyntax for NumberShape {
+impl ExpandExpression for NumberShape {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        _context: &Context,
+        _context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
@@ -129,6 +268,12 @@ impl ExpandSyntax for NumberShape {
                     return Err(ShellError::type_error(
                         "Number",
                         "glob pattern".to_string().tagged(token_tag),
+                    ))
+                }
+                RawToken::Operator(..) => {
+                    return Err(ShellError::type_error(
+                        "Number",
+                        "operator".to_string().tagged(token_tag),
                     ))
                 }
                 RawToken::Variable(tag) if tag.slice(source) == "it" => {
@@ -153,11 +298,11 @@ impl ExpandSyntax for NumberShape {
 #[derive(Debug, Copy, Clone)]
 pub struct PatternShape;
 
-impl ExpandSyntax for PatternShape {
+impl ExpandExpression for PatternShape {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        context: &Context,
+        context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
@@ -176,6 +321,12 @@ impl ExpandSyntax for PatternShape {
                             "Invalid external command".to_string().tagged(token_tag),
                         ))
                     }
+                    RawToken::Operator(..) => {
+                        return Err(ShellError::type_error(
+                            "glob pattern",
+                            "operator".to_string().tagged(token_tag),
+                        ))
+                    }
                     RawToken::ExternalWord => {
                         return Err(ShellError::invalid_external_word(token_tag))
                     }
@@ -184,11 +335,11 @@ impl ExpandSyntax for PatternShape {
                     RawToken::Size(_, _) => hir::Expression::bare(token_tag),
                     RawToken::GlobPattern => hir::Expression::pattern(token_tag),
                     RawToken::Bare => hir::Expression::file_path(
-                        expand_path(token_tag.slice(source), context),
+                        expand_file_path(token_tag.slice(source), context),
                         token_tag,
                     ),
                     RawToken::String(tag) => hir::Expression::file_path(
-                        expand_path(tag.slice(source), context),
+                        expand_file_path(tag.slice(source), &context),
                         token_tag,
                     ),
                 })
@@ -198,52 +349,160 @@ impl ExpandSyntax for PatternShape {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct PathShape;
+pub struct FilePathShape;
 
-impl ExpandSyntax for PathShape {
+impl ExpandExpression for FilePathShape {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        context: &Context,
+        context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
         parse_single_node(token_nodes, "Path", source, origin, |token, token_tag| {
             Ok(match token {
-                RawToken::Variable(tag) if tag.slice(source) == "it" => {
-                    hir::Expression::it_variable(tag, token_tag)
-                }
-                RawToken::ExternalCommand(tag) => hir::Expression::external_command(tag, token_tag),
-                RawToken::ExternalWord => return Err(ShellError::invalid_external_word(token_tag)),
-                RawToken::Variable(tag) => hir::Expression::variable(tag, token_tag),
-                RawToken::Number(_) => hir::Expression::bare(token_tag),
-                RawToken::Size(_, _) => hir::Expression::bare(token_tag),
-                RawToken::Bare => hir::Expression::file_path(
-                    expand_path(token_tag.slice(source), context),
-                    token_tag,
-                ),
                 RawToken::GlobPattern => {
                     return Err(ShellError::type_error(
                         "Path",
                         "glob pattern".tagged(token_tag),
                     ))
                 }
-                RawToken::String(tag) => {
-                    hir::Expression::file_path(expand_path(tag.slice(source), context), token_tag)
+                RawToken::Operator(..) => {
+                    return Err(ShellError::type_error("Path", "operator".tagged(token_tag)))
                 }
+                RawToken::Variable(tag) if tag.slice(source) == "it" => {
+                    hir::Expression::it_variable(tag, token_tag)
+                }
+                RawToken::Variable(tag) => hir::Expression::variable(tag, token_tag),
+                RawToken::ExternalCommand(tag) => hir::Expression::external_command(tag, token_tag),
+                RawToken::ExternalWord => return Err(ShellError::invalid_external_word(token_tag)),
+                RawToken::Number(_) => hir::Expression::bare(token_tag),
+                RawToken::Size(_, _) => hir::Expression::bare(token_tag),
+                RawToken::Bare => hir::Expression::file_path(
+                    expand_file_path(token_tag.slice(source), context),
+                    token_tag,
+                ),
+
+                RawToken::String(tag) => hir::Expression::file_path(
+                    expand_file_path(tag.slice(source), context),
+                    token_tag,
+                ),
             })
         })
     }
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct CommandHeadShape;
+pub struct VariablePathShape;
 
-impl ExpandSyntax for CommandHeadShape {
+impl ExpandExpression for VariablePathShape {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        context: &Context,
+        context: &ExpandContext,
+        source: &Text,
+        origin: uuid::Uuid,
+    ) -> Result<hir::Expression, ShellError> {
+        // 1. let the head be the first token, expecting a variable
+        // 2. let the tail be an empty list of members
+        // 2. while the next token (excluding ws) is a dot:
+        //   1. consume the dot
+        //   2. consume the next token as a member and push it onto tail
+
+        let head = VariableShape.expand(token_nodes, context, source, origin)?;
+        let start = head.tag();
+        let mut end = start;
+        let mut tail: Vec<Tagged<String>> = vec![];
+
+        loop {
+            println!("end={:?} tail={:?}", end, tail);
+
+            match DotShape.skip(token_nodes, context, source, origin) {
+                Err(_) => break,
+                Ok(_) => {}
+            }
+
+            let member = MemberShape.expand(token_nodes, context, source, origin)?;
+            end = member.tag();
+            tail.push(member);
+        }
+
+        Ok(hir::Expression::path(head, tail, start.until(end)))
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct VariableShape;
+
+impl ExpandExpression for VariableShape {
+    fn expand<'a, 'b>(
+        &self,
+        token_nodes: &mut TokensIterator<'_>,
+        context: &ExpandContext,
+        source: &Text,
+        origin: uuid::Uuid,
+    ) -> Result<hir::Expression, ShellError> {
+        parse_single_node(
+            token_nodes,
+            "variable",
+            source,
+            origin,
+            |token, token_tag| {
+                Ok(match token {
+                    RawToken::Variable(tag) => hir::Expression::variable(tag, token_tag),
+                    _ => {
+                        return Err(ShellError::type_error(
+                            "variable",
+                            token.type_name().tagged(token_tag),
+                        ))
+                    }
+                })
+            },
+        )
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct MemberShape;
+
+impl ExpandSyntax for MemberShape {
+    type Output = Tagged<String>;
+
+    fn expand<'a, 'b>(
+        &self,
+        token_nodes: &mut TokensIterator<'_>,
+        context: &ExpandContext,
+        source: &Text,
+        origin: uuid::Uuid,
+    ) -> Result<Tagged<String>, ShellError> {
+        let bare = BareShape.test(token_nodes, context, source, origin);
+        if let Some(bare) = bare {
+            let bare = bare.commit();
+
+            return Ok(bare.tag().slice(source).to_string().tagged(bare.tag()));
+        }
+
+        let string = StringShape.test(token_nodes, context, source, origin);
+
+        if let Some(string) = string {
+            let string = string.commit();
+            let (outer, inner) = string.expect_string();
+
+            return Ok(inner.slice(source).to_string().tagged(outer));
+        }
+
+        Err(ShellError::syntax_error())
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct CommandHeadShape;
+
+impl ExpandExpression for CommandHeadShape {
+    fn expand<'a, 'b>(
+        &self,
+        token_nodes: &mut TokensIterator<'_>,
+        context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
@@ -273,11 +532,11 @@ impl ExpandSyntax for CommandHeadShape {
 #[derive(Debug, Copy, Clone)]
 pub struct InternalCommandHeadShape;
 
-impl ExpandSyntax for InternalCommandHeadShape {
+impl ExpandExpression for InternalCommandHeadShape {
     fn expand(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        context: &Context,
+        context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
@@ -315,11 +574,11 @@ impl ExpandSyntax for InternalCommandHeadShape {
 #[derive(Debug, Copy, Clone)]
 pub struct AnyExpressionShape;
 
-impl ExpandSyntax for AnyExpressionShape {
+impl ExpandExpression for AnyExpressionShape {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        context: &Context,
+        context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
@@ -327,19 +586,19 @@ impl ExpandSyntax for AnyExpressionShape {
     }
 }
 
-pub fn expand_path(string: &str, context: &Context) -> PathBuf {
-    let expanded = shellexpand::tilde_with_context(string, || context.shell_manager.homedir());
+pub fn expand_file_path(string: &str, context: &ExpandContext) -> PathBuf {
+    let expanded = shellexpand::tilde_with_context(string, || context.homedir());
 
     PathBuf::from(expanded.as_ref())
 }
 
-fn parse_single_node<'a, 'b>(
+fn parse_single_node<'a, 'b, T>(
     token_nodes: &'b mut TokensIterator<'a>,
     expected: &'static str,
     source: &Text,
     origin: uuid::Uuid,
-    callback: impl FnOnce(RawToken, Tag) -> Result<hir::Expression, ShellError>,
-) -> Result<hir::Expression, ShellError> {
+    callback: impl FnOnce(RawToken, Tag) -> Result<T, ShellError>,
+) -> Result<T, ShellError> {
     let peeked = token_nodes
         .peek_any()
         .ok_or_else(|| ShellError::unexpected_eof("String", origin))?;

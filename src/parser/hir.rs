@@ -28,7 +28,7 @@ pub(crate) use self::binary::Binary;
 pub(crate) use self::external_command::ExternalCommand;
 pub(crate) use self::named::NamedArguments;
 pub(crate) use self::path::Path;
-pub(crate) use self::syntax_shape::ExpandSyntax;
+pub(crate) use self::syntax_shape::{ExpandContext, ExpandExpression, ExpandSyntax};
 pub(crate) use self::tokens_iterator::TokensIterator;
 
 pub use self::syntax_shape::SyntaxShape;
@@ -157,6 +157,15 @@ impl Expression {
 
     pub(crate) fn string(inner: impl Into<Tag>, outer: impl Into<Tag>) -> Expression {
         RawExpression::Literal(Literal::String(inner.into())).tagged(outer.into())
+    }
+
+    pub(crate) fn path(
+        head: Expression,
+        tail: Vec<Tagged<impl Into<String>>>,
+        tag: impl Into<Tag>,
+    ) -> Expression {
+        let tail = tail.into_iter().map(|t| t.map(|s| s.into())).collect();
+        RawExpression::Path(Box::new(Path::new(head, tail))).tagged(tag.into())
     }
 
     pub(crate) fn file_path(path: impl Into<PathBuf>, outer: impl Into<Tag>) -> Expression {

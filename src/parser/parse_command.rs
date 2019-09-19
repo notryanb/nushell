@@ -4,7 +4,7 @@ use crate::errors::{ArgumentError, ShellError};
 use crate::parser::registry::{NamedType, PositionalType, Signature};
 use crate::parser::{baseline_parse_tokens, TokensIterator};
 use crate::parser::{
-    hir::{self, Literal, NamedArguments, RawExpression},
+    hir::{self, ExpandContext, Literal, NamedArguments, RawExpression},
     Flag, RawToken, TokenNode,
 };
 use crate::traits::ToDebug;
@@ -21,18 +21,23 @@ pub fn parse_command(
 ) -> Result<(hir::Call, Arc<Command>), ShellError> {
     trace!("Processing {:?}", command.signature());
 
-    let call =
-        match parse_command_tail(&command.signature(), context, body.item, source, body.tag())? {
-            None => hir::Call::new(Box::new(head), None, None),
-            Some((positional, named)) => hir::Call::new(Box::new(head), positional, named),
-        };
+    let call = match parse_command_tail(
+        &command.signature(),
+        &context.expand_context(),
+        body.item,
+        source,
+        body.tag(),
+    )? {
+        None => hir::Call::new(Box::new(head), None, None),
+        Some((positional, named)) => hir::Call::new(Box::new(head), positional, named),
+    };
 
     Ok((call, command))
 }
 
 pub fn parse_command_tail(
     config: &Signature,
-    context: &Context,
+    context: &ExpandContext,
     tail: &mut TokensIterator,
     source: &Text,
     command_tag: Tag,

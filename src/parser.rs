@@ -8,7 +8,7 @@ use crate::errors::ShellError;
 
 pub(crate) use deserializer::ConfigDeserializer;
 pub(crate) use hir::baseline_parse_tokens::baseline_parse_tokens;
-pub(crate) use hir::{ExpandSyntax, SyntaxShape, TokensIterator};
+pub(crate) use hir::{ExpandExpression, ExpandSyntax, SyntaxShape, TokensIterator};
 pub(crate) use parse::call_node::CallNode;
 pub(crate) use parse::files::Files;
 pub(crate) use parse::flag::Flag;

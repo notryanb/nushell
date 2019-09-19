@@ -64,7 +64,6 @@ fn triage_external_head(node: &TokenNode) -> Result<Tag, ShellError> {
         TokenNode::Nodes(nodes) => unimplemented!(),
         TokenNode::Delimited(delimited) => unimplemented!(),
         TokenNode::Pipeline(pipeline) => unimplemented!(),
-        TokenNode::Operator(operator) => operator.tag(),
         TokenNode::Flag(flag) => flag.tag(),
         TokenNode::Member(member) => *member,
         TokenNode::Whitespace(whitespace) => {
@@ -74,7 +73,9 @@ fn triage_external_head(node: &TokenNode) -> Result<Tag, ShellError> {
     })
 }
 
-fn triage_continuation<'a, 'b>(nodes: &'a mut TokensIterator<'b>) -> Result<Option<Tag>, ShellError> {
+fn triage_continuation<'a, 'b>(
+    nodes: &'a mut TokensIterator<'b>,
+) -> Result<Option<Tag>, ShellError> {
     let peeked = nodes.peek_any();
 
     let peeked = match peeked {
@@ -82,13 +83,10 @@ fn triage_continuation<'a, 'b>(nodes: &'a mut TokensIterator<'b>) -> Result<Opti
         Some(peeked) => peeked,
     };
 
-    match peeked {
+    match &peeked {
         peeked if peeked.node.is_whitespace() => return Ok(None),
         peeked => match &peeked.node {
-            TokenNode::Token(..)
-            | TokenNode::Flag(..)
-            | TokenNode::Member(..)
-            | TokenNode::Operator(..) => {}
+            TokenNode::Token(..) | TokenNode::Flag(..) | TokenNode::Member(..) => {}
             TokenNode::Call(..) => unimplemented!("call"),
             TokenNode::Nodes(..) => unimplemented!("nodes"),
             TokenNode::Delimited(..) => unimplemented!("delimited"),
@@ -98,6 +96,6 @@ fn triage_continuation<'a, 'b>(nodes: &'a mut TokensIterator<'b>) -> Result<Opti
         },
     }
 
-    let (_, next) = peeked.commit();
+    let next = peeked.commit();
     Ok(Some(next.tag()))
 }

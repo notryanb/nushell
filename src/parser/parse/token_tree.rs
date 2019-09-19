@@ -16,7 +16,6 @@ pub enum TokenNode {
     Nodes(Tagged<Vec<TokenNode>>),
     Delimited(Tagged<DelimitedNode>),
     Pipeline(Tagged<Pipeline>),
-    Operator(Tagged<Operator>),
     Flag(Tagged<Flag>),
     Member(Tag),
     Whitespace(Tag),
@@ -99,7 +98,6 @@ impl TokenNode {
             TokenNode::Call(s) => s.tag(),
             TokenNode::Delimited(s) => s.tag(),
             TokenNode::Pipeline(s) => s.tag(),
-            TokenNode::Operator(s) => s.tag(),
             TokenNode::Flag(s) => s.tag(),
             TokenNode::Member(s) => *s,
             TokenNode::Whitespace(s) => *s,
@@ -114,7 +112,6 @@ impl TokenNode {
             TokenNode::Call(_) => "command",
             TokenNode::Delimited(d) => d.type_name(),
             TokenNode::Pipeline(_) => "pipeline",
-            TokenNode::Operator(_) => "operator",
             TokenNode::Flag(_) => "flag",
             TokenNode::Member(_) => "member",
             TokenNode::Whitespace(_) => "whitespace",
@@ -136,6 +133,16 @@ impl TokenNode {
 
     pub fn source<'a>(&self, source: &'a Text) -> &'a str {
         self.tag().slice(source)
+    }
+
+    pub fn get_variable(&self) -> Result<(Tag, Tag), ShellError> {
+        match self {
+            TokenNode::Token(Tagged {
+                item: RawToken::Variable(inner_tag),
+                tag: outer_tag,
+            }) => Ok((*outer_tag, *inner_tag)),
+            _ => Err(ShellError::type_error("variable", self.tagged_type_name())),
+        }
     }
 
     pub fn is_bare(&self) -> bool {
@@ -190,6 +197,46 @@ impl TokenNode {
         match self {
             TokenNode::Whitespace(_) => true,
             _ => false,
+        }
+    }
+
+    pub fn expect_string(&self) -> (Tag, Tag) {
+        match self {
+            TokenNode::Token(Tagged {
+                item: RawToken::String(inner_tag),
+                tag: outer_tag,
+            }) => (*outer_tag, *inner_tag),
+            other => panic!("Expected string, found {:?}", other),
+        }
+    }
+}
+
+#[cfg(test)]
+impl TokenNode {
+    pub fn expect_list(&self) -> Tagged<&[TokenNode]> {
+        match self {
+            TokenNode::Nodes(Tagged { item, tag }) => (&item[..]).tagged(tag),
+            other => panic!("Expected list, found {:?}", other),
+        }
+    }
+
+    pub fn expect_var(&self) -> (Tag, Tag) {
+        match self {
+            TokenNode::Token(Tagged {
+                item: RawToken::Variable(inner_tag),
+                tag: outer_tag,
+            }) => (*outer_tag, *inner_tag),
+            other => panic!("Expected var, found {:?}", other),
+        }
+    }
+
+    pub fn expect_bare(&self) -> Tag {
+        match self {
+            TokenNode::Token(Tagged {
+                item: RawToken::Bare,
+                tag: tag,
+            }) => *tag,
+            other => panic!("Expected var, found {:?}", other),
         }
     }
 }

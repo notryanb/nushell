@@ -2,23 +2,19 @@ use crate::context::Context;
 use crate::errors::ShellError;
 use crate::parser::{
     hir,
-    hir::syntax_shape::AnyExpressionShape,
-    hir::{
-        baseline_parse_single_token, baseline_parse_token_as_command_head,
-        baseline_parse_token_as_number, baseline_parse_token_as_path,
-        baseline_parse_token_as_pattern, baseline_parse_token_as_string, ExpandSyntax,
-    },
-    DelimitedNode, Delimiter, PathNode, RawToken, SyntaxShape, TokenNode, TokensIterator,
+    hir::syntax_shape::{AnyExpressionShape, ExpandContext},
+    hir::{baseline_parse_single_token, ExpandExpression, ExpandSyntax},
+    DelimitedNode, Delimiter, PathNode, RawToken, TokenNode, TokensIterator,
 };
-use crate::{Tag, Tagged, TaggedItem, Text};
+use crate::{Tagged, TaggedItem, Text};
 use log::trace;
 
 pub fn baseline_parse_tokens(
     token_nodes: &mut TokensIterator<'_>,
-    context: &Context,
+    context: &ExpandContext,
     source: &Text,
     origin: uuid::Uuid,
-    syntax_type: impl ExpandSyntax,
+    syntax_type: impl ExpandExpression,
 ) -> Result<Vec<hir::Expression>, ShellError> {
     let mut exprs: Vec<hir::Expression> = vec![];
 
@@ -36,10 +32,10 @@ pub fn baseline_parse_tokens(
 
 pub fn baseline_parse_next_expr(
     tokens: &mut TokensIterator,
-    context: &Context,
+    context: &ExpandContext,
     source: &Text,
     origin: uuid::Uuid,
-    syntax_type: impl ExpandSyntax,
+    syntax_type: impl ExpandExpression,
 ) -> Result<hir::Expression, ShellError> {
     let next = tokens
         .next()
@@ -224,7 +220,7 @@ pub fn baseline_parse_next_expr(
 
 pub fn baseline_parse_semantic_token(
     token: &TokenNode,
-    context: &Context,
+    context: &ExpandContext,
     source: &Text,
 ) -> Result<hir::Expression, ShellError> {
     match token {
@@ -233,9 +229,6 @@ pub fn baseline_parse_semantic_token(
         TokenNode::Call(_call) => unimplemented!(),
         TokenNode::Delimited(delimited) => baseline_parse_delimited(delimited, context, source),
         TokenNode::Pipeline(_pipeline) => unimplemented!(),
-        TokenNode::Operator(op) => Err(ShellError::syntax_error(
-            "Unexpected operator".tagged(op.tag),
-        )),
         TokenNode::Flag(flag) => Err(ShellError::syntax_error("Unexpected flag".tagged(flag.tag))),
         TokenNode::Member(tag) => Err(ShellError::syntax_error(
             "BUG: Top-level member".tagged(*tag),
@@ -249,17 +242,17 @@ pub fn baseline_parse_semantic_token(
 
 pub fn baseline_parse_delimited(
     token: &Tagged<DelimitedNode>,
-    context: &Context,
+    context: &ExpandContext,
     source: &Text,
 ) -> Result<hir::Expression, ShellError> {
     match token.delimiter() {
         Delimiter::Brace => {
             let children = token.children();
             let exprs = baseline_parse_tokens(
-                &mut TokensIterator::new(children, true),
+                &mut TokensIterator::new(children, *context.origin(), true),
                 context,
                 source,
-                token.tag.origin.unwrap_or_else(|| uuid::Uuid::nil()),
+                token.tag.origin,
                 AnyExpressionShape,
             )?;
 
@@ -270,10 +263,10 @@ pub fn baseline_parse_delimited(
         Delimiter::Square => {
             let children = token.children();
             let exprs = baseline_parse_tokens(
-                &mut TokensIterator::new(children, true),
+                &mut TokensIterator::new(children, *context.origin(), true),
                 context,
                 source,
-                token.tag.origin.unwrap_or_else(|| uuid::Uuid::nil()),
+                token.tag.origin,
                 AnyExpressionShape,
             )?;
 
@@ -285,7 +278,7 @@ pub fn baseline_parse_delimited(
 
 pub fn baseline_parse_path(
     token: &Tagged<PathNode>,
-    context: &Context,
+    context: &ExpandContext,
     source: &Text,
 ) -> Result<hir::Expression, ShellError> {
     let head = baseline_parse_semantic_token(token.head(), context, source)?;
@@ -302,6 +295,7 @@ pub fn baseline_parse_path(
                 | RawToken::Variable(_)
                 | RawToken::ExternalCommand(_)
                 | RawToken::GlobPattern
+                | RawToken::Operator(_)
                 | RawToken::ExternalWord => {
                     return Err(ShellError::type_error(
                         "String",

@@ -40,7 +40,7 @@ pub trait TaggedItem: Sized {
             self,
             Tag {
                 span: Span::unknown(),
-                origin: None,
+                origin: uuid::Uuid::nil(),
             },
         )
     }
@@ -87,15 +87,14 @@ impl<T> Tagged<T> {
         self.tag
     }
 
-    // TODO: This should not be optional
-    pub fn origin(&self) -> Option<uuid::Uuid> {
+    pub fn origin(&self) -> uuid::Uuid {
         self.tag.origin
     }
 
     pub fn origin_name(&self, source_map: &SourceMap) -> Option<String> {
-        match self.tag.origin.map(|x| source_map.get(&x)) {
-            Some(Some(SpanSource::File(file))) => Some(file.clone()),
-            Some(Some(SpanSource::Url(url))) => Some(url.clone()),
+        match source_map.get(&self.tag.origin) {
+            Some(SpanSource::File(file)) => Some(file.clone()),
+            Some(SpanSource::Url(url)) => Some(url.clone()),
             _ => None,
         }
     }
@@ -165,20 +164,23 @@ impl From<&std::ops::Range<usize>> for Span {
     Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, Hash, Getters, new,
 )]
 pub struct Tag {
-    pub origin: Option<Uuid>,
+    pub origin: Uuid,
     pub span: Span,
 }
 
 impl From<Span> for Tag {
     fn from(span: Span) -> Self {
-        Tag { origin: None, span }
+        Tag {
+            origin: uuid::Uuid::nil(),
+            span,
+        }
     }
 }
 
 impl From<&Span> for Tag {
     fn from(span: &Span) -> Self {
         Tag {
-            origin: None,
+            origin: uuid::Uuid::nil(),
             span: *span,
         }
     }
@@ -187,7 +189,7 @@ impl From<&Span> for Tag {
 impl From<(usize, usize, TracableContext)> for Tag {
     fn from((start, end, context): (usize, usize, TracableContext)) -> Self {
         Tag {
-            origin: Some(context.origin),
+            origin: context.origin,
             span: Span { start, end },
         }
     }
@@ -196,7 +198,7 @@ impl From<(usize, usize, TracableContext)> for Tag {
 impl From<(usize, usize, Uuid)> for Tag {
     fn from((start, end, origin): (usize, usize, Uuid)) -> Self {
         Tag {
-            origin: Some(origin),
+            origin,
             span: Span { start, end },
         }
     }
@@ -205,7 +207,7 @@ impl From<(usize, usize, Uuid)> for Tag {
 impl From<(usize, usize, Option<Uuid>)> for Tag {
     fn from((start, end, origin): (usize, usize, Option<Uuid>)) -> Self {
         Tag {
-            origin,
+            origin: origin.unwrap_or(uuid::Uuid::nil()),
             span: Span { start, end },
         }
     }
@@ -214,7 +216,7 @@ impl From<(usize, usize, Option<Uuid>)> for Tag {
 impl From<nom_locate::LocatedSpanEx<&str, TracableContext>> for Tag {
     fn from(input: nom_locate::LocatedSpanEx<&str, TracableContext>) -> Tag {
         Tag {
-            origin: Some(input.extra.origin),
+            origin: input.extra.origin,
             span: Span {
                 start: input.offset,
                 end: input.offset + input.fragment.len(),
@@ -237,19 +239,22 @@ impl From<&Tag> for Span {
 
 impl Tag {
     pub fn unknown_origin(span: Span) -> Tag {
-        Tag { origin: None, span }
+        Tag {
+            origin: uuid::Uuid::nil(),
+            span,
+        }
     }
 
     pub fn unknown_span(origin: Uuid) -> Tag {
         Tag {
-            origin: Some(origin),
+            origin,
             span: Span::unknown(),
         }
     }
 
     pub fn unknown() -> Tag {
         Tag {
-            origin: None,
+            origin: uuid::Uuid::nil(),
             span: Span::unknown(),
         }
     }

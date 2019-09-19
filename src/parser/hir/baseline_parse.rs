@@ -20,6 +20,11 @@ pub fn baseline_parse_single_token(
         RawToken::Variable(tag) if tag.slice(source) == "it" => {
             hir::Expression::it_variable(tag, token.tag())
         }
+        RawToken::Operator(_) => {
+            return Err(ShellError::syntax_error(
+                "Unexpected operator".tagged(token.tag()),
+            ))
+        }
         RawToken::Variable(tag) => hir::Expression::variable(tag, token.tag()),
         RawToken::ExternalCommand(tag) => hir::Expression::external_command(tag, token.tag()),
         RawToken::ExternalWord => return Err(ShellError::invalid_external_word(token.tag())),
@@ -59,6 +64,11 @@ pub fn baseline_parse_token_as_number(
         RawToken::Size(number, unit) => {
             hir::Expression::size(number.to_number(source), unit, token.tag())
         }
+        RawToken::Operator(_) => {
+            return Err(ShellError::syntax_error(
+                "Unexpected operator".tagged(token.tag()),
+            ))
+        }
         RawToken::Bare => hir::Expression::bare(token.tag()),
         RawToken::GlobPattern => {
             return Err(ShellError::type_error(
@@ -90,6 +100,11 @@ pub fn baseline_parse_token_as_string(
                 "glob pattern".tagged(token.tag()),
             ))
         }
+        RawToken::Operator(_) => {
+            return Err(ShellError::syntax_error(
+                "Unexpected operator".tagged(token.tag()),
+            ))
+        }
         RawToken::String(tag) => hir::Expression::string(tag, token.tag()),
     })
 }
@@ -117,6 +132,11 @@ pub fn baseline_parse_token_as_path(
                 "glob pattern".tagged(token.tag()),
             ))
         }
+        RawToken::Operator(_) => {
+            return Err(ShellError::syntax_error(
+                "Unexpected operator".tagged(token.tag()),
+            ))
+        }
         RawToken::String(tag) => {
             hir::Expression::file_path(expand_path(tag.slice(source), context), token.tag())
         }
@@ -135,6 +155,11 @@ pub fn baseline_parse_token_as_pattern(
         RawToken::ExternalCommand(_) => {
             return Err(ShellError::syntax_error(
                 "Invalid external command".to_string().tagged(token.tag()),
+            ))
+        }
+        RawToken::Operator(_) => {
+            return Err(ShellError::syntax_error(
+                "Unexpected operator".tagged(token.tag()),
             ))
         }
         RawToken::ExternalWord => return Err(ShellError::invalid_external_word(token.tag())),

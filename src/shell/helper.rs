@@ -110,7 +110,6 @@ fn paint_token_node(token_node: &TokenNode, line: &str) -> String {
         TokenNode::Member(..) => Color::Yellow.bold().paint(token_node.tag().slice(line)),
         TokenNode::Error(..) => Color::Red.bold().paint(token_node.tag().slice(line)),
         TokenNode::Delimited(..) => Color::White.paint(token_node.tag().slice(line)),
-        TokenNode::Operator(..) => Color::White.normal().paint(token_node.tag().slice(line)),
         TokenNode::Pipeline(..) => Color::Blue.normal().paint(token_node.tag().slice(line)),
         TokenNode::Token(Tagged {
             item: RawToken::Number(..),
@@ -142,6 +141,10 @@ fn paint_token_node(token_node: &TokenNode, line: &str) -> String {
         }) => Color::Cyan.bold().paint(token_node.tag().slice(line)),
         TokenNode::Token(Tagged {
             item: RawToken::ExternalWord,
+            ..
+        }) => Color::Black.bold().paint(token_node.tag().slice(line)),
+        TokenNode::Token(Tagged {
+            item: RawToken::Operator(..),
             ..
         }) => Color::Black.bold().paint(token_node.tag().slice(line)),
     };

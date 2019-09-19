@@ -1,5 +1,5 @@
 use crate::commands::{Command, UnevaluatedCallInfo};
-use crate::parser::hir;
+use crate::parser::{hir, hir::syntax_shape::ExpandContext};
 use crate::prelude::*;
 
 use derive_new::new;
@@ -81,6 +81,10 @@ pub struct Context {
 impl Context {
     pub(crate) fn registry(&self) -> &CommandRegistry {
         &self.registry
+    }
+
+    pub(crate) fn expand_context(&self, origin: uuid::Uuid) -> ExpandContext {
+        ExpandContext::new(&self.registry, origin, self.shell_manager.homedir())
     }
 
     pub(crate) fn basic() -> Result<Context, Box<dyn Error>> {

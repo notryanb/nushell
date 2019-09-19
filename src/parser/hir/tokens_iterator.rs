@@ -4,6 +4,7 @@ use derive_new::new;
 #[derive(Debug, new)]
 pub struct TokensIterator<'a> {
     tokens: &'a [TokenNode],
+    origin: uuid::Uuid,
     skip_ws: bool,
     #[new(default)]
     index: usize,
@@ -15,31 +16,35 @@ pub struct TokensIterator<'a> {
 pub struct Peeked<'content, 'me> {
     pub(crate) node: &'content TokenNode,
     iterator: &'me mut TokensIterator<'content>,
-    commit_point: usize,
+    from: usize,
+    to: usize,
 }
 
-impl<'me, 'content> Peeked<'content, 'me> {
-    pub(crate) fn commit(self) -> (&'me mut TokensIterator<'content>, &'content TokenNode) {
-        let mut iterator = self.iterator;
-        let node = self.node;
-        iterator.commit(self.commit_point);
-        (iterator, node)
+impl<'content, 'me> Peeked<'content, 'me> {
+    pub fn commit(self) -> &'content TokenNode {
+        let Peeked {
+            node,
+            iterator,
+            from,
+            to,
+        } = self;
+        iterator.commit(from, to);
+        node
     }
 }
 
-impl<'a> TokensIterator<'a> {
+impl<'content> TokensIterator<'content> {
+    #[cfg(test)]
+    pub fn all(tokens: &'content [TokenNode], origin: uuid::Uuid) -> TokensIterator<'content> {
+        TokensIterator::new(tokens, origin, false)
+    }
+
     pub fn remove(&mut self, position: usize) {
         self.seen.insert(position);
     }
 
-    pub fn len(&self) -> usize {
-        self.tokens.len()
-    }
-
     pub fn at_end(&self) -> bool {
-        let mut tokens = self.clone();
-
-        tokens.next().is_none()
+        peek(self, self.skip_ws).is_none()
     }
 
     pub fn advance(&mut self) {
@@ -75,9 +80,10 @@ impl<'a> TokensIterator<'a> {
         self.index = 0;
     }
 
-    pub fn clone(&self) -> TokensIterator<'a> {
+    pub fn clone(&self) -> TokensIterator<'content> {
         TokensIterator {
             tokens: self.tokens,
+            origin: self.origin,
             index: self.index,
             seen: self.seen.clone(),
             skip_ws: self.skip_ws,
@@ -86,38 +92,32 @@ impl<'a> TokensIterator<'a> {
 
     // Get the next token, not including whitespace
     pub fn next_non_ws(&mut self) -> Option<&TokenNode> {
-        next(self, true)
+        let peeked = start_next(self, true)?;
+        Some(peeked.commit())
     }
 
     // Peek the next token, not including whitespace
-    pub fn peek_non_ws<'b>(&'b mut self) -> Option<Peeked<'a, 'b>> {
-        let mut tokens = self.clone();
-
-        next(&mut tokens, true).map(|node| Peeked {
-            node,
-            iterator: self,
-            commit_point: tokens.index,
-        })
+    pub fn peek_non_ws<'me>(&'me mut self) -> Option<Peeked<'content, 'me>> {
+        start_next(self, false)
     }
 
     // Get the next token, including whitespace
     pub fn next_any(&mut self) -> Option<&TokenNode> {
-        next(self, false)
+        let peeked = start_next(self, false)?;
+        Some(peeked.commit())
     }
 
     // Peek the next token, including whitespace
-    pub fn peek_any<'b>(&'b mut self) -> Option<Peeked<'a, 'b>> {
-        let mut tokens = self.clone();
-
-        next(&mut tokens, false).map(|node| Peeked {
-            node,
-            iterator: self,
-            commit_point: tokens.index,
-        })
+    pub fn peek_any<'me>(&'me mut self) -> Option<Peeked<'content, 'me>> {
+        start_next(self, false)
     }
 
-    fn commit(&mut self, commit_point: usize) {
-        self.index = commit_point;
+    fn commit(&mut self, from: usize, to: usize) {
+        for index in from..to {
+            self.seen.insert(index);
+        }
+
+        self.index = to;
     }
 
     pub fn debug_remaining(&self) -> Vec<TokenNode> {
@@ -138,6 +138,81 @@ impl<'a> Iterator for TokensIterator<'a> {
 
     fn next(&mut self) -> Option<&'a TokenNode> {
         next(self, self.skip_ws)
+    }
+}
+
+fn peek<'content, 'me>(
+    iterator: &TokensIterator<'content>,
+    skip_ws: bool,
+) -> Option<&'content TokenNode> {
+    let from = iterator.index;
+    let mut to = iterator.index;
+
+    loop {
+        if to >= iterator.tokens.len() {
+            return None;
+        }
+
+        if iterator.seen.contains(&to) {
+            to += 1;
+            continue;
+        }
+
+        if to >= iterator.tokens.len() {
+            return None;
+        }
+
+        let node = &iterator.tokens[to];
+
+        match node {
+            TokenNode::Whitespace(_) if skip_ws => {
+                to += 1;
+            }
+            other => {
+                to += 1;
+                return Some(node);
+            }
+        }
+    }
+}
+
+fn start_next<'content, 'me>(
+    iterator: &'me mut TokensIterator<'content>,
+    skip_ws: bool,
+) -> Option<Peeked<'content, 'me>> {
+    let from = iterator.index;
+    let mut to = iterator.index;
+
+    loop {
+        if to >= iterator.tokens.len() {
+            return None;
+        }
+
+        if iterator.seen.contains(&to) {
+            to += 1;
+            continue;
+        }
+
+        if to >= iterator.tokens.len() {
+            return None;
+        }
+
+        let node = &iterator.tokens[to];
+
+        match node {
+            TokenNode::Whitespace(_) if skip_ws => {
+                to += 1;
+            }
+            other => {
+                to += 1;
+                return Some(Peeked {
+                    node,
+                    iterator,
+                    from,
+                    to,
+                });
+            }
+        }
     }
 }
 
