@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::parser::parse::flag::{Flag, FlagKind};
 use crate::parser::parse::operator::Operator;
 use crate::parser::parse::pipeline::{Pipeline, PipelineElement};
-use crate::parser::parse::token_tree::{DelimitedNode, Delimiter, PathNode, TokenNode};
+use crate::parser::parse::token_tree::{DelimitedNode, Delimiter, TokenNode};
 use crate::parser::parse::tokens::{RawNumber, RawToken};
 use crate::parser::parse::unit::Unit;
 use crate::parser::CallNode;

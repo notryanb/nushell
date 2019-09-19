@@ -583,39 +583,10 @@ fn classify_command(
             }
         }
 
-        // Otherwise, if the command is a bare word, we'll need to triage it
-        // call if call.head().is_bare() => {
-        //     let head = call.head();
-        //     let name = head.source(source);
-
-        //     match context.has_command(name) {
-        //         // if the command is in the registry, it's an internal command
-        //         true => {
-        //             let command = context.get_command(name);
-        //             let config = command.signature();
-
-        //             trace!(target: "nu::build_pipeline", "classifying {:?}", config);
-
-        //             let args: hir::Call = config.parse_args(call, &context, source)?;
-
-        //             trace!(target: "nu::build_pipeline", "args :: {}", args.debug(source));
-
-        //             Ok(ClassifiedCommand::Internal(InternalCommand {
-        //                 command,
-        //                 name_tag: head.tag(),
-        //                 args,
-        //             }))
-        //         }
-
-        //         // otherwise, it's an external command
-        //         false => Ok(external_command(call, source, name.tagged(head.tag()))),
-        //     }
-        // }
         other => unimplemented!("{:?}", other),
-
         // If the command is something else (like a number or a variable), that is currently unsupported.
         // We might support `$somevar` as a curried command in the future.
-        _ => Err(ShellError::invalid_command(command.tag())),
+        // _ => Err(ShellError::invalid_command(command.tag())),
     }
 }
 

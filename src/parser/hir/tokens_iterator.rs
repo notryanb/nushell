@@ -75,10 +75,6 @@ impl<'content, 'me> PeekedNode<'content, 'me> {
         iterator.commit(from, to);
         node
     }
-
-    pub fn type_error(self, expected: impl Into<String>) -> ShellError {
-        peek_error(Some(self.node), self.iterator.origin, expected)
-    }
 }
 
 pub fn peek_error(
@@ -160,12 +156,6 @@ impl<'content> TokensIterator<'content> {
         start_next(self, false)
     }
 
-    // Get the next token, including whitespace
-    pub fn next_any(&mut self) -> Option<&TokenNode> {
-        let peeked = start_next(self, false);
-        peeked.commit()
-    }
-
     // Peek the next token, including whitespace
     pub fn peek_any<'me>(&'me mut self) -> Peeked<'content, 'me> {
         start_next(self, false)
@@ -184,12 +174,6 @@ impl<'content> TokensIterator<'content> {
         tokens.restart();
         tokens.cloned().collect()
     }
-
-    pub fn is_empty(&self) -> bool {
-        // This will behave correctly regardless of the `skip_ws` flag
-        let mut tokens = self.clone();
-        tokens.next().is_none()
-    }
 }
 
 impl<'a> Iterator for TokensIterator<'a> {
@@ -204,7 +188,6 @@ fn peek<'content, 'me>(
     iterator: &TokensIterator<'content>,
     skip_ws: bool,
 ) -> Option<&'content TokenNode> {
-    let from = iterator.index;
     let mut to = iterator.index;
 
     loop {
@@ -227,8 +210,7 @@ fn peek<'content, 'me>(
             TokenNode::Whitespace(_) if skip_ws => {
                 to += 1;
             }
-            other => {
-                to += 1;
+            _ => {
                 return Some(node);
             }
         }
@@ -272,7 +254,7 @@ fn start_next<'content, 'me>(
             TokenNode::Whitespace(_) if skip_ws => {
                 to += 1;
             }
-            other => {
+            _ => {
                 to += 1;
                 return Peeked {
                     node: Some(node),

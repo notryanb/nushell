@@ -1,4 +1,4 @@
-use crate::parser::hir::tokens_iterator::{peek_error, Peeked};
+use crate::parser::hir::tokens_iterator::Peeked;
 use crate::parser::{hir, hir::TokensIterator, Operator, RawToken, TokenNode};
 use crate::prelude::*;
 use derive_new::new;
@@ -146,9 +146,9 @@ impl TestSyntax for BareShape {
     fn test<'a, 'b>(
         &self,
         token_nodes: &'b mut TokensIterator<'a>,
-        context: &ExpandContext,
-        source: &Text,
-        origin: uuid::Uuid,
+        _context: &ExpandContext,
+        _source: &Text,
+        _origin: uuid::Uuid,
     ) -> Option<Peeked<'a, 'b>> {
         let peeked = token_nodes.peek_any();
 
@@ -170,7 +170,7 @@ impl SkipSyntax for DotShape {
     fn skip<'a, 'b>(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        context: &ExpandContext,
+        _context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<(), ShellError> {
@@ -234,9 +234,9 @@ impl TestSyntax for StringShape {
     fn test<'a, 'b>(
         &self,
         token_nodes: &'b mut TokensIterator<'a>,
-        context: &ExpandContext,
-        source: &Text,
-        origin: uuid::Uuid,
+        _context: &ExpandContext,
+        _source: &Text,
+        _origin: uuid::Uuid,
     ) -> Option<Peeked<'a, 'b>> {
         let peeked = token_nodes.peek_any();
 
@@ -438,7 +438,7 @@ impl ExpandExpression for VariableShape {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        context: &ExpandContext,
+        _context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
@@ -477,14 +477,14 @@ impl ExpandSyntax for MemberShape {
     ) -> Result<Tagged<String>, ShellError> {
         let bare = BareShape.test(token_nodes, context, source, origin);
         if let Some(peeked) = bare {
-            let node = peeked.commit().unwrap();
+            let node = peeked.not_eof("member")?.commit();
             return Ok(node.tag().slice(source).to_string().tagged(node.tag()));
         }
 
         let string = StringShape.test(token_nodes, context, source, origin);
 
         if let Some(peeked) = string {
-            let node = peeked.commit().unwrap();
+            let node = peeked.not_eof("member")?.commit();
             let (outer, inner) = node.expect_string();
 
             return Ok(inner.slice(source).to_string().tagged(outer));
@@ -501,7 +501,7 @@ impl ExpandExpression for CommandHeadShape {
     fn expand<'a, 'b>(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        context: &ExpandContext,
+        _context: &ExpandContext,
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
@@ -535,9 +535,9 @@ impl ExpandExpression for InternalCommandHeadShape {
     fn expand(
         &self,
         token_nodes: &mut TokensIterator<'_>,
-        context: &ExpandContext,
-        source: &Text,
-        origin: uuid::Uuid,
+        _context: &ExpandContext,
+        _source: &Text,
+        _origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
         let peeked_head = token_nodes.peek_non_ws().not_eof("command head")?;
 
@@ -574,10 +574,10 @@ pub struct AnyExpressionShape;
 impl ExpandExpression for AnyExpressionShape {
     fn expand<'a, 'b>(
         &self,
-        token_nodes: &mut TokensIterator<'_>,
-        context: &ExpandContext,
-        source: &Text,
-        origin: uuid::Uuid,
+        _token_nodes: &mut TokensIterator<'_>,
+        _context: &ExpandContext,
+        _source: &Text,
+        _origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
         unimplemented!()
     }
@@ -592,8 +592,8 @@ pub fn expand_file_path(string: &str, context: &ExpandContext) -> PathBuf {
 fn parse_single_node<'a, 'b, T>(
     token_nodes: &'b mut TokensIterator<'a>,
     expected: &'static str,
-    source: &Text,
-    origin: uuid::Uuid,
+    _source: &Text,
+    _origin: uuid::Uuid,
     callback: impl FnOnce(RawToken, Tag) -> Result<T, ShellError>,
 ) -> Result<T, ShellError> {
     let peeked = token_nodes.peek_any().not_eof(expected)?;

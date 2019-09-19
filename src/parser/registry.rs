@@ -1,11 +1,11 @@
 // TODO: Temporary redirect
 pub(crate) use crate::context::CommandRegistry;
 use crate::evaluate::{evaluate_baseline_expr, Scope};
-use crate::parser::{hir, hir::SyntaxShape, parse_command, TokensIterator};
+use crate::parser::{hir, hir::SyntaxShape};
 use crate::prelude::*;
 use derive_new::new;
 use indexmap::IndexMap;
-use log::trace;
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

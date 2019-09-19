@@ -105,6 +105,7 @@ impl ShellError {
         .start()
     }
 
+    #[allow(unused)]
     pub(crate) fn invalid_command(problem: impl Into<Tag>) -> ShellError {
         ProximateShellError::InvalidCommand {
             command: problem.into(),
@@ -273,7 +274,7 @@ impl ShellError {
                 .with_label(Label::new_primary(tag).with_message(expected)),
 
             ProximateShellError::UnexpectedEof {
-                expected, origin
+                expected, ..
             } => Diagnostic::new(Severity::Error, format!("Unexpected end of input, expected {}", expected)),
 
             ProximateShellError::RangeError {

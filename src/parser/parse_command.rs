@@ -4,11 +4,11 @@ use crate::errors::{ArgumentError, ShellError};
 use crate::parser::registry::{NamedType, PositionalType, Signature};
 use crate::parser::{baseline_parse_tokens, TokensIterator};
 use crate::parser::{
-    hir::{self, ExpandContext, Literal, NamedArguments, RawExpression},
-    Flag, RawToken, TokenNode,
+    hir::{self, ExpandContext, NamedArguments, RawExpression},
+    Flag,
 };
 use crate::traits::ToDebug;
-use crate::{Tag, Tagged, TaggedItem, Text};
+use crate::{Tag, Tagged, Text};
 use log::trace;
 use std::sync::Arc;
 

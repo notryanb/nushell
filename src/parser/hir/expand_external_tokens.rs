@@ -1,18 +1,6 @@
-use crate::context::Context;
 use crate::errors::ShellError;
-use crate::parser::{
-    hir,
-    hir::{
-        baseline_parse_single_token, baseline_parse_token_as_command_head,
-        baseline_parse_token_as_number, baseline_parse_token_as_path,
-        baseline_parse_token_as_pattern, baseline_parse_token_as_string,
-    },
-    DelimitedNode, Delimiter, PathNode, RawToken, SyntaxShape, TokenNode, TokensIterator,
-};
-use crate::{Tag, Tagged, TaggedItem, Text};
-use derive_new::new;
-use log::trace;
-use serde::{Deserialize, Serialize};
+use crate::parser::{TokenNode, TokensIterator};
+use crate::{Tag, Tagged, Text};
 
 pub fn expand_external_tokens(
     token_nodes: &mut TokensIterator<'_>,
@@ -60,16 +48,16 @@ pub fn expand_next_expression(
 fn triage_external_head(node: &TokenNode) -> Result<Tag, ShellError> {
     Ok(match node {
         TokenNode::Token(token) => token.tag(),
-        TokenNode::Call(call) => unimplemented!(),
-        TokenNode::Nodes(nodes) => unimplemented!(),
-        TokenNode::Delimited(delimited) => unimplemented!(),
-        TokenNode::Pipeline(pipeline) => unimplemented!(),
+        TokenNode::Call(_call) => unimplemented!(),
+        TokenNode::Nodes(_nodes) => unimplemented!(),
+        TokenNode::Delimited(_delimited) => unimplemented!(),
+        TokenNode::Pipeline(_pipeline) => unimplemented!(),
         TokenNode::Flag(flag) => flag.tag(),
         TokenNode::Member(member) => *member,
-        TokenNode::Whitespace(whitespace) => {
+        TokenNode::Whitespace(_whitespace) => {
             unreachable!("This function should be called after next_non_ws()")
         }
-        TokenNode::Error(error) => unimplemented!(),
+        TokenNode::Error(_error) => unimplemented!(),
     })
 }
 
@@ -94,6 +82,6 @@ fn triage_continuation<'a, 'b>(
         TokenNode::Error(..) => unimplemented!("error"),
     }
 
-    let next = peeked.commit();
+    peeked.commit();
     Ok(Some(node.tag()))
 }

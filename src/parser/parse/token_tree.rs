@@ -1,5 +1,5 @@
 use crate::errors::ShellError;
-use crate::parser::parse::{call_node::*, flag::*, operator::*, pipeline::*, tokens::*};
+use crate::parser::parse::{call_node::*, flag::*, pipeline::*, tokens::*};
 use crate::prelude::*;
 use crate::traits::ToDebug;
 use crate::{Tag, Tagged, Text};
@@ -234,7 +234,7 @@ impl TokenNode {
         match self {
             TokenNode::Token(Tagged {
                 item: RawToken::Bare,
-                tag: tag,
+                tag,
             }) => *tag,
             other => panic!("Expected var, found {:?}", other),
         }

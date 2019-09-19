@@ -1,4 +1,4 @@
-use crate::parser::{CallNode, TokenNode};
+use crate::parser::TokenNode;
 use crate::traits::ToDebug;
 use crate::{Tag, Tagged};
 use derive_new::new;
@@ -13,9 +13,7 @@ pub struct Pipeline {
 
 impl ToDebug for Pipeline {
     fn fmt_debug(&self, f: &mut fmt::Formatter, source: &str) -> fmt::Result {
-        let last = self.parts.len() - 1;
-
-        for (i, part) in self.parts.iter().enumerate() {
+        for part in self.parts.iter() {
             write!(f, "{}", part.debug(source))?;
         }
 
