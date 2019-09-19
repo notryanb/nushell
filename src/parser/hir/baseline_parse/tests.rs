@@ -46,7 +46,7 @@ fn test_parse_path() {
 
             hir::Expression::path(
                 hir::Expression::variable(inner_var, outer_var),
-                vec!["cpu".tagged(amount), "max ghz".tagged(outer_max_ghz)],
+                vec!["amount".tagged(amount), "max ghz".tagged(outer_max_ghz)],
                 outer_var.until(outer_max_ghz),
             )
         },

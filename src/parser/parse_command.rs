@@ -23,7 +23,7 @@ pub fn parse_command(
 
     let call = match parse_command_tail(
         &command.signature(),
-        &context.expand_context(),
+        &context.expand_context(body.tag.origin),
         body.item,
         source,
         body.tag(),
@@ -43,7 +43,7 @@ pub fn parse_command_tail(
     command_tag: Tag,
 ) -> Result<Option<(Option<Vec<hir::Expression>>, Option<NamedArguments>)>, ShellError> {
     let mut named = NamedArguments::new();
-    let origin = command_tag.origin.unwrap_or_else(|| uuid::Uuid::nil());
+    let origin = command_tag.origin;
 
     trace_remaining("nodes", tail.clone(), source);
 

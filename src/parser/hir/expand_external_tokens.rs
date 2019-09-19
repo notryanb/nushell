@@ -78,24 +78,22 @@ fn triage_continuation<'a, 'b>(
 ) -> Result<Option<Tag>, ShellError> {
     let peeked = nodes.peek_any();
 
-    let peeked = match peeked {
+    let node = match peeked.node {
         None => return Ok(None),
-        Some(peeked) => peeked,
+        Some(node) => node,
     };
 
-    match &peeked {
-        peeked if peeked.node.is_whitespace() => return Ok(None),
-        peeked => match &peeked.node {
-            TokenNode::Token(..) | TokenNode::Flag(..) | TokenNode::Member(..) => {}
-            TokenNode::Call(..) => unimplemented!("call"),
-            TokenNode::Nodes(..) => unimplemented!("nodes"),
-            TokenNode::Delimited(..) => unimplemented!("delimited"),
-            TokenNode::Pipeline(..) => unimplemented!("pipeline"),
-            TokenNode::Whitespace(..) => unimplemented!("whitespace"),
-            TokenNode::Error(..) => unimplemented!("error"),
-        },
+    match &node {
+        node if node.is_whitespace() => return Ok(None),
+        TokenNode::Token(..) | TokenNode::Flag(..) | TokenNode::Member(..) => {}
+        TokenNode::Call(..) => unimplemented!("call"),
+        TokenNode::Nodes(..) => unimplemented!("nodes"),
+        TokenNode::Delimited(..) => unimplemented!("delimited"),
+        TokenNode::Pipeline(..) => unimplemented!("pipeline"),
+        TokenNode::Whitespace(..) => unimplemented!("whitespace"),
+        TokenNode::Error(..) => unimplemented!("error"),
     }
 
     let next = peeked.commit();
-    Ok(Some(next.tag()))
+    Ok(Some(node.tag()))
 }

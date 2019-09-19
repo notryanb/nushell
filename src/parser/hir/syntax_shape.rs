@@ -1,4 +1,4 @@
-use crate::parser::hir::tokens_iterator::Peeked;
+use crate::parser::hir::tokens_iterator::{peek_error, Peeked};
 use crate::parser::{hir, hir::TokensIterator, Operator, RawToken, TokenNode};
 use crate::prelude::*;
 use derive_new::new;
@@ -91,6 +91,7 @@ impl<'context> ExpandContext<'context> {
 
         callback(ExpandContext {
             registry: &registry,
+            origin: uuid::Uuid::nil(),
             homedir: None,
         })
     }
@@ -149,12 +150,11 @@ impl TestSyntax for BareShape {
         source: &Text,
         origin: uuid::Uuid,
     ) -> Option<Peeked<'a, 'b>> {
-        match token_nodes.peek_any() {
-            Some(peeked) => match peeked.node {
-                TokenNode::Token(token) => match token.item {
-                    RawToken::Bare => Some(peeked),
-                    _ => None,
-                },
+        let peeked = token_nodes.peek_any();
+
+        match peeked.node {
+            Some(TokenNode::Token(token)) => match token.item {
+                RawToken::Bare => Some(peeked),
                 _ => None,
             },
 
@@ -176,9 +176,10 @@ impl SkipSyntax for DotShape {
     ) -> Result<(), ShellError> {
         parse_single_node(token_nodes, "dot", source, origin, |token, token_tag| {
             Ok(match token {
+                RawToken::Operator(Operator::Dot) => {}
                 _ => {
                     return Err(ShellError::type_error(
-                        "variable",
+                        "dot",
                         token.type_name().tagged(token_tag),
                     ))
                 }
@@ -237,12 +238,11 @@ impl TestSyntax for StringShape {
         source: &Text,
         origin: uuid::Uuid,
     ) -> Option<Peeked<'a, 'b>> {
-        match token_nodes.peek_any() {
-            Some(peeked) => match peeked.node {
-                TokenNode::Token(token) => match token.item {
-                    RawToken::String(_) => Some(peeked),
-                    _ => None,
-                },
+        let peeked = token_nodes.peek_any();
+
+        match peeked.node {
+            Some(TokenNode::Token(token)) => match token.item {
+                RawToken::String(_) => Some(peeked),
                 _ => None,
             },
 
@@ -476,22 +476,21 @@ impl ExpandSyntax for MemberShape {
         origin: uuid::Uuid,
     ) -> Result<Tagged<String>, ShellError> {
         let bare = BareShape.test(token_nodes, context, source, origin);
-        if let Some(bare) = bare {
-            let bare = bare.commit();
-
-            return Ok(bare.tag().slice(source).to_string().tagged(bare.tag()));
+        if let Some(peeked) = bare {
+            let node = peeked.commit().unwrap();
+            return Ok(node.tag().slice(source).to_string().tagged(node.tag()));
         }
 
         let string = StringShape.test(token_nodes, context, source, origin);
 
-        if let Some(string) = string {
-            let string = string.commit();
-            let (outer, inner) = string.expect_string();
+        if let Some(peeked) = string {
+            let node = peeked.commit().unwrap();
+            let (outer, inner) = node.expect_string();
 
             return Ok(inner.slice(source).to_string().tagged(outer));
         }
 
-        Err(ShellError::syntax_error())
+        Err(token_nodes.peek_any().type_error("member"))
     }
 }
 
@@ -540,9 +539,7 @@ impl ExpandExpression for InternalCommandHeadShape {
         source: &Text,
         origin: uuid::Uuid,
     ) -> Result<hir::Expression, ShellError> {
-        let peeked_head = token_nodes
-            .peek_non_ws()
-            .ok_or_else(|| ShellError::unexpected_eof("command head", origin))?;
+        let peeked_head = token_nodes.peek_non_ws().not_eof("command head")?;
 
         let expr = match peeked_head.node {
             TokenNode::Token(
@@ -599,9 +596,7 @@ fn parse_single_node<'a, 'b, T>(
     origin: uuid::Uuid,
     callback: impl FnOnce(RawToken, Tag) -> Result<T, ShellError>,
 ) -> Result<T, ShellError> {
-    let peeked = token_nodes
-        .peek_any()
-        .ok_or_else(|| ShellError::unexpected_eof("String", origin))?;
+    let peeked = token_nodes.peek_any().not_eof(expected)?;
 
     let expr = match peeked.node {
         TokenNode::Token(token) => callback(token.item, token.tag())?,

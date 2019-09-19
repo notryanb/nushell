@@ -1,3 +1,4 @@
+use crate::errors::ShellError;
 use crate::parser::TokenNode;
 use derive_new::new;
 
@@ -14,22 +15,80 @@ pub struct TokensIterator<'a> {
 
 #[derive(Debug)]
 pub struct Peeked<'content, 'me> {
-    pub(crate) node: &'content TokenNode,
+    pub(crate) node: Option<&'content TokenNode>,
     iterator: &'me mut TokensIterator<'content>,
     from: usize,
     to: usize,
 }
 
 impl<'content, 'me> Peeked<'content, 'me> {
-    pub fn commit(self) -> &'content TokenNode {
+    pub fn commit(self) -> Option<&'content TokenNode> {
         let Peeked {
             node,
             iterator,
             from,
             to,
         } = self;
+
+        let node = node?;
+        iterator.commit(from, to);
+        Some(node)
+    }
+
+    pub fn not_eof(
+        self,
+        expected: impl Into<String>,
+    ) -> Result<PeekedNode<'content, 'me>, ShellError> {
+        match self.node {
+            None => Err(ShellError::unexpected_eof(expected, self.iterator.origin)),
+            Some(node) => Ok(PeekedNode {
+                node,
+                iterator: self.iterator,
+                from: self.from,
+                to: self.to,
+            }),
+        }
+    }
+
+    pub fn type_error(self, expected: impl Into<String>) -> ShellError {
+        peek_error(self.node, self.iterator.origin, expected)
+    }
+}
+
+#[derive(Debug)]
+pub struct PeekedNode<'content, 'me> {
+    pub(crate) node: &'content TokenNode,
+    iterator: &'me mut TokensIterator<'content>,
+    from: usize,
+    to: usize,
+}
+
+impl<'content, 'me> PeekedNode<'content, 'me> {
+    pub fn commit(self) -> &'content TokenNode {
+        let PeekedNode {
+            node,
+            iterator,
+            from,
+            to,
+        } = self;
+
         iterator.commit(from, to);
         node
+    }
+
+    pub fn type_error(self, expected: impl Into<String>) -> ShellError {
+        peek_error(Some(self.node), self.iterator.origin, expected)
+    }
+}
+
+pub fn peek_error(
+    node: Option<&TokenNode>,
+    origin: uuid::Uuid,
+    expected: impl Into<String>,
+) -> ShellError {
+    match node {
+        None => ShellError::unexpected_eof(expected, origin),
+        Some(node) => ShellError::type_error(expected, node.tagged_type_name()),
     }
 }
 
@@ -92,23 +151,23 @@ impl<'content> TokensIterator<'content> {
 
     // Get the next token, not including whitespace
     pub fn next_non_ws(&mut self) -> Option<&TokenNode> {
-        let peeked = start_next(self, true)?;
-        Some(peeked.commit())
+        let peeked = start_next(self, true);
+        peeked.commit()
     }
 
     // Peek the next token, not including whitespace
-    pub fn peek_non_ws<'me>(&'me mut self) -> Option<Peeked<'content, 'me>> {
+    pub fn peek_non_ws<'me>(&'me mut self) -> Peeked<'content, 'me> {
         start_next(self, false)
     }
 
     // Get the next token, including whitespace
     pub fn next_any(&mut self) -> Option<&TokenNode> {
-        let peeked = start_next(self, false)?;
-        Some(peeked.commit())
+        let peeked = start_next(self, false);
+        peeked.commit()
     }
 
     // Peek the next token, including whitespace
-    pub fn peek_any<'me>(&'me mut self) -> Option<Peeked<'content, 'me>> {
+    pub fn peek_any<'me>(&'me mut self) -> Peeked<'content, 'me> {
         start_next(self, false)
     }
 
@@ -179,13 +238,18 @@ fn peek<'content, 'me>(
 fn start_next<'content, 'me>(
     iterator: &'me mut TokensIterator<'content>,
     skip_ws: bool,
-) -> Option<Peeked<'content, 'me>> {
+) -> Peeked<'content, 'me> {
     let from = iterator.index;
     let mut to = iterator.index;
 
     loop {
         if to >= iterator.tokens.len() {
-            return None;
+            return Peeked {
+                node: None,
+                iterator,
+                from,
+                to,
+            };
         }
 
         if iterator.seen.contains(&to) {
@@ -194,7 +258,12 @@ fn start_next<'content, 'me>(
         }
 
         if to >= iterator.tokens.len() {
-            return None;
+            return Peeked {
+                node: None,
+                iterator,
+                from,
+                to,
+            };
         }
 
         let node = &iterator.tokens[to];
@@ -205,12 +274,12 @@ fn start_next<'content, 'me>(
             }
             other => {
                 to += 1;
-                return Some(Peeked {
-                    node,
+                return Peeked {
+                    node: Some(node),
                     iterator,
                     from,
                     to,
-                });
+                };
             }
         }
     }

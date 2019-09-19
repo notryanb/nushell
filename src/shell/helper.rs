@@ -159,7 +159,11 @@ fn paint_pipeline_element(pipeline_element: &PipelineElement, line: &str) -> Str
         styled.push_str(&Color::Purple.paint("|"));
     }
 
-    let mut tokens = TokensIterator::new(&pipeline_element.tokens, false);
+    let mut tokens = TokensIterator::new(
+        &pipeline_element.tokens,
+        pipeline_element.tokens.tag.origin,
+        false,
+    );
     let head = tokens.next();
 
     match head {
