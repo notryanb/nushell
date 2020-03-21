@@ -28,6 +28,13 @@ use std::iter::Iterator;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
+/// Loads the nu plugin at the given path.
+///
+/// A child process is spawned using the given plugin path and connects it to stdin and stdout.
+/// Stdin is fed a JsonRpc request.
+/// Stdout is read from and serialized into a JsonRpc.
+/// The params from the JsonRpc request are then turned into a command that acts as a Command or a sink
+/// and it gets registered with the Context.
 fn load_plugin(path: &std::path::Path, context: &mut Context) -> Result<(), ShellError> {
     let mut child = std::process::Command::new(path)
         .stdin(std::process::Stdio::piped())
@@ -97,6 +104,10 @@ fn load_plugin(path: &std::path::Path, context: &mut Context) -> Result<(), Shel
     result
 }
 
+/// Returns a collection of paths which nu searches for plugins.
+///
+/// The default paths nu uses to find plugins are the directory of the current nu executable
+/// and the paths listed inside the PATH environment variable of the system.
 fn search_paths() -> Vec<std::path::PathBuf> {
     use std::env;
 
@@ -122,6 +133,10 @@ fn search_paths() -> Vec<std::path::PathBuf> {
     search_paths
 }
 
+/// Loads nu plugins
+///
+/// Plugins must begin with the prefix `nu_plugin_` followed by at least one alphanumeric character.
+/// Nu will only load binaries with valid names for the current operating system.
 pub fn load_plugins(context: &mut Context) -> Result<(), ShellError> {
     let opts = glob::MatchOptions {
         case_sensitive: false,
@@ -195,9 +210,11 @@ pub fn load_plugins(context: &mut Context) -> Result<(), ShellError> {
     Ok(())
 }
 
+/// Unit struct used to implement the history of what the user has entered.
 pub struct History;
 
 impl History {
+    /// The path to the history.txt file where the nu command history is kept.
     pub fn path() -> PathBuf {
         const FNAME: &str = "history.txt";
         config::user_data()
@@ -209,6 +226,7 @@ impl History {
     }
 }
 
+/// Creates a default `Starship` prompt
 #[allow(dead_code)]
 fn create_default_starship_config() -> Option<toml::Value> {
     let mut map = toml::value::Table::new();
@@ -225,6 +243,7 @@ fn create_default_starship_config() -> Option<toml::Value> {
     Some(toml::Value::Table(map))
 }
 
+/// Creates a default Context that loads the environment, path variables and registers all the built-in commands
 pub fn create_default_context(
     syncer: &mut crate::env::environment_syncer::EnvironmentSyncer,
 ) -> Result<Context, Box<dyn Error>> {

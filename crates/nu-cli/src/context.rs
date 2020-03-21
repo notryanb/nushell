@@ -75,6 +75,10 @@ impl CommandRegistry {
     }
 }
 
+/// The context in which nu is running.
+///
+/// The context contains the registered commands, the host terminal, a list of errors,
+/// if the user has pressed CTRL + C, and a shell manager.
 #[derive(Clone)]
 pub struct Context {
     pub registry: CommandRegistry,
