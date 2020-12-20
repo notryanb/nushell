@@ -61,6 +61,7 @@ Inflector = "0.11"
 itertools = "0.9.0"
 lazy_static = "1.*"
 log = "0.4.11"
+md5 = "0.7.0"
 meval = "0.2.0"
 num-bigint = {version = "0.3.0", features = ["serde"]}
 num-format = {version = "0.4.0", features = ["with-num-bigint"]}
