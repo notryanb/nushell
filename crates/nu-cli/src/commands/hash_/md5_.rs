@@ -88,7 +88,12 @@ fn action(
     match &input.value {
         UntaggedValue::Primitive(Primitive::Line(s))
         | UntaggedValue::Primitive(Primitive::String(s)) => {
-            Ok(UntaggedValue::string(md5::compute(&s)).into_value(tag))
+            let digest_string = format!("{:x}", md5::compute(&s));            
+            Ok(UntaggedValue::string(digest_string).into_value(tag))
+        }
+        UntaggedValue::Primitive(Primitive::Binary(s)) => {
+            let digest_string = format!("{:x}", md5::compute(&s));            
+            Ok(UntaggedValue::string(digest_string).into_value(tag))
         }
         other => {
             let got = format!("got {}", other.type_name());
@@ -111,14 +116,24 @@ mod tests {
     #[test]
     fn md5_encode_a_string() {
         let word = string("username:password");
-        let expected = UntaggedValue::string("dXNlcm5hbWU6cGFzc3dvcmQ=").into_untagged_value();
+        let expected = UntaggedValue::string("133e1b8eda335c4c7f7a508620ca7f10").into_untagged_value();
 
         let actual = action(
             &word,
-            &Base64Config {
-                character_set: "standard".to_string(),
-                action_type: ActionType::Encode,
-            },
+            Tag::unknown(),
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn md5_encode_bytes() {
+        let bytes: [u8; 3] = [0x5a, 0x11, 0xf6];
+        let binary_value = UntaggedValue::binary(bytes.to_vec()).into_untagged_value();
+        let expected = UntaggedValue::string("133e1b8eda335c4c7f7a508620ca7f10").into_untagged_value();
+
+        let actual = action(
+            &binary_value,
             Tag::unknown(),
         )
         .unwrap();
